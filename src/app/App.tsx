@@ -60,7 +60,8 @@ const NAV: { route: string; label: string }[] = [
 ];
 
 export function navigate(path: string) {
-  window.location.hash = path ? `#/${path}` : '#/';
+  // Keep the fragment a valid CSS selector for the preview runtime's navigation bridge.
+  window.location.hash = path ? `#${path}` : '#home';
 }
 
 export function App() {
