@@ -32,6 +32,8 @@ export interface SeatRecord {
 export interface RoomRecord {
   code: string;
   rulesConfig: RulesConfigId;
+  /** ranked rooms record results on the linked accounts at match end */
+  ranked?: boolean;
   seed: number;
   actions: ReplayAction[];
   seats: (SeatRecord | null)[];
@@ -44,6 +46,10 @@ export interface RoomRecord {
 export interface AccountRecord {
   id: number;
   username: string;
+  /** ranked-play stats (item 4b) */
+  rankedPlayed?: number;
+  rankedWins?: number;
+  rankedPoints?: number;
 }
 
 export interface RoomStore {
@@ -56,6 +62,7 @@ export interface RoomStore {
   accountByToken(accountToken: string): Promise<AccountRecord | null>;
   roomsOfAccount(accountId: number): Promise<string[]>;
   linkSeat(code: string, seat: number, accountId: number): Promise<void>;
+  recordRankedResult(accountId: number, win: boolean, pointsDelta: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -70,7 +77,10 @@ export function newToken(): string {
 
 export class MemoryStore implements RoomStore {
   private rooms = new Map<string, RoomRecord>();
-  private accounts = new Map<number, { username: string; tokenHash: string }>();
+  private accounts = new Map<
+    number,
+    { username: string; tokenHash: string; rankedPlayed: number; rankedWins: number; rankedPoints: number }
+  >();
   private nextId = 1;
 
   async init(): Promise<void> {}
@@ -97,12 +107,14 @@ export class MemoryStore implements RoomStore {
     }
     const id = this.nextId++;
     const t = newToken();
-    this.accounts.set(id, { username, tokenHash: sha(t) });
+    this.accounts.set(id, { username, tokenHash: sha(t), rankedPlayed: 0, rankedWins: 0, rankedPoints: 0 });
     return { account: { id, username }, accountToken: t };
   }
   async accountByToken(accountToken: string): Promise<AccountRecord | null> {
     const h = sha(accountToken);
-    for (const [id, a] of this.accounts) if (a.tokenHash === h) return { id, username: a.username };
+    for (const [id, a] of this.accounts)
+      if (a.tokenHash === h)
+        return { id, username: a.username, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints };
     return null;
   }
   async roomsOfAccount(accountId: number): Promise<string[]> {
@@ -113,6 +125,13 @@ export class MemoryStore implements RoomStore {
   async linkSeat(code: string, seat: number, accountId: number): Promise<void> {
     const r = this.rooms.get(code);
     if (r?.seats[seat]) r.seats[seat] = { ...r.seats[seat]!, accountId };
+  }
+  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number): Promise<void> {
+    const a = this.accounts.get(accountId);
+    if (!a) return;
+    a.rankedPlayed++;
+    if (win) a.rankedWins++;
+    a.rankedPoints += pointsDelta;
   }
   async close(): Promise<void> {}
 }
@@ -146,6 +165,9 @@ export class PostgresStore implements RoomStore {
         account_id INT NOT NULL,
         PRIMARY KEY (code, seat)
       );
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_played INT NOT NULL DEFAULT 0;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_wins INT NOT NULL DEFAULT 0;
+      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_points INT NOT NULL DEFAULT 0;
     `);
   }
 
@@ -189,8 +211,19 @@ export class PostgresStore implements RoomStore {
   }
 
   async accountByToken(accountToken: string): Promise<AccountRecord | null> {
-    const res = await this.pool.query('SELECT id, username FROM accounts WHERE token_hash = $1', [sha(accountToken)]);
-    return res.rows[0] ? { id: res.rows[0].id, username: res.rows[0].username } : null;
+    const res = await this.pool.query(
+      'SELECT id, username, ranked_played, ranked_wins, ranked_points FROM accounts WHERE token_hash = $1',
+      [sha(accountToken)]
+    );
+    return res.rows[0]
+      ? {
+          id: res.rows[0].id,
+          username: res.rows[0].username,
+          rankedPlayed: res.rows[0].ranked_played,
+          rankedWins: res.rows[0].ranked_wins,
+          rankedPoints: res.rows[0].ranked_points,
+        }
+      : null;
   }
 
   async roomsOfAccount(accountId: number): Promise<string[]> {
@@ -206,6 +239,17 @@ export class PostgresStore implements RoomStore {
       `INSERT INTO room_seats (code, seat, account_id) VALUES ($1, $2, $3)
        ON CONFLICT (code, seat) DO UPDATE SET account_id = EXCLUDED.account_id`,
       [code, seat, accountId]
+    );
+  }
+
+  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE accounts
+       SET ranked_played = ranked_played + 1,
+           ranked_wins = ranked_wins + $2,
+           ranked_points = ranked_points + $3
+       WHERE id = $1`,
+      [accountId, win ? 1 : 0, pointsDelta]
     );
   }
 

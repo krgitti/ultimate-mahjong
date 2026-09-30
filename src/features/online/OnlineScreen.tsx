@@ -19,6 +19,7 @@ interface Meta {
   started: boolean;
   seats: ({ seat: number; name: string; connected: boolean; human: boolean } | null)[];
   canStart: boolean;
+  ranked?: boolean;
 }
 interface MyActions {
   legal: number[];
@@ -45,6 +46,9 @@ export function OnlineScreen() {
   const [accountToken, setAccountToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.accountToken'));
   const [accountName, setAccountName] = useState(() => sessionStorage.getItem('umo.online.accountName') || '');
   const [accountUser, setAccountUser] = useState('');
+  const [rulesSel, setRulesSel] = useState<'classic' | 'chicken' | 'riichi' | 'mcr'>('classic');
+  const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
+  const [stats, setStats] = useState<{ played: number; wins: number; points: number } | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [actions, setActions] = useState<MyActions>({ legal: [], canTsumo: false, canRiichi: false });
@@ -71,7 +75,20 @@ export function OnlineScreen() {
         setError(null);
         return;
       }
+      if (msg.t === 'queue') {
+        setQueueInfo({ position: msg.position, size: msg.size, rules: String(msg.rules) });
+        return;
+      }
+      if (msg.t === 'unqueued') {
+        setQueueInfo(null);
+        return;
+      }
+      if (msg.t === 'stats') {
+        setStats({ played: msg.rankedPlayed, wins: msg.rankedWins, points: msg.rankedPoints });
+        return;
+      }
       if (msg.t === 'joined') {
+        setQueueInfo(null);
         setCode(msg.code);
         setToken(msg.token);
         setMySeat(msg.seat);
@@ -126,10 +143,44 @@ export function OnlineScreen() {
           Seu nome
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogador" />
         </label>
+        <label className="field">
+          Regras da sala/fila
+          <select value={rulesSel} onChange={(e) => setRulesSel(e.target.value as typeof rulesSel)}>
+            <option value="classic">HK clássica</option>
+            <option value="chicken">HK frango (sem mínimo)</option>
+            <option value="riichi">Riichi (Japão)</option>
+            <option value="mcr">MCR (Competição)</option>
+          </select>
+        </label>
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', accountToken: accountToken ?? undefined })}>
+          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined })}>
             ✚ Criar sala
           </button>
+          <button
+            className="btn"
+            title={accountToken ? 'Resultados contam para a sua conta' : 'Crie uma conta para salas ranqueadas'}
+            disabled={!accountToken}
+            onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, ranked: true, accountToken })}
+          >
+            🏆 Sala ranqueada
+          </button>
+        </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn btn-primary" onClick={() => connect({ t: 'queue', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined })}>
+            ⚡ Partida rápida
+          </button>
+          {queueInfo ? (
+            <>
+              <span className="muted small">
+                Na fila ({queueInfo.rules}): posição {queueInfo.position} de {queueInfo.size} — a mesa começa com 4.
+              </span>
+              <button className="btn btn-sm" onClick={() => send({ t: 'unqueue' })}>
+                Sair da fila
+              </button>
+            </>
+          ) : (
+            <span className="muted small">Entre na fila e o servidor monta a mesa com 4 jogadores.</span>
+          )}
         </div>
         <div className="row" style={{ marginTop: 10 }}>
           <input
@@ -154,7 +205,16 @@ export function OnlineScreen() {
           {accountToken && (
             <button className="btn" onClick={() => connect({ t: 'join', accountToken })}>↻ Retomar minha sala</button>
           )}
+          {accountToken && (
+            <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>📊 Estatísticas</button>
+          )}
         </div>
+        {stats && (
+          <p className="muted small" style={{ marginTop: 6 }}>
+            🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
+            <b>{stats.points}</b> pontos
+          </p>
+        )}
         {accountToken && (
           <p className="muted small" style={{ marginTop: 6 }}>
             Conta <b>{accountName}</b> ativa — suas salas podem ser retomadas em outro dispositivo.
@@ -172,7 +232,11 @@ export function OnlineScreen() {
   if (phase === 'lobby') {
     return (
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        <h1 className="page-title">Sala {code}</h1>
+        <h1 className="page-title">
+          Sala {code}
+          {meta?.ranked ? ' 🏆' : ''}
+        </h1>
+        {meta?.ranked && <p className="page-sub">Sala ranqueada — o resultado conta para as contas vinculadas.</p>}
         <p className="page-sub">Compartilhe o código <b>{code}</b>. Seu token de reconexão fica salvo nesta aba.</p>
         <div className="panel">
           {meta?.seats.map((s2, i) => (
@@ -206,7 +270,8 @@ export function OnlineScreen() {
     <div>
       <div className="row-between" style={{ marginBottom: '0.5rem' }}>
         <h1 className="page-title" style={{ fontSize: '1.2rem' }}>
-          Sala {meta?.code} — mão {v.handNumber} · vento {WIND_PT[v.roundWind]}
+          Sala {meta?.code}
+          {meta?.ranked ? ' 🏆' : ''} — mão {v.handNumber} · vento {WIND_PT[v.roundWind]}
         </h1>
         <span className="muted small">Muro {v.wallCount}</span>
       </div>

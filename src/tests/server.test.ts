@@ -19,13 +19,22 @@ interface Snap {
     offers: { seat: number; kind: string }[];
   };
   myActions?: { legal: number[] };
-  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number };
+  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number; ranked?: boolean };
   code?: string;
   token?: string;
   accountToken?: string;
   reconnected?: boolean;
   spectator?: boolean;
   error?: string;
+  seat2?: never;
+  position?: number;
+  size?: number;
+  rules?: string;
+  queued?: boolean;
+  username?: string;
+  rankedPlayed?: number;
+  rankedWins?: number;
+  rankedPoints?: number;
 }
 
 interface TestClient {
@@ -323,4 +332,119 @@ describe('item 4b — Postgres snapshots, cross-device rejoin & optional account
     s2.close();
     await cleanup([code], [username]);
   }, 60000);
+});
+
+describe('item 4c — matchmaking rápido, salas ranqueadas e stats', () => {
+  const DB = process.env.UMO_TEST_DATABASE_URL || 'postgres://umo:umo@127.0.0.1:5432/umo';
+
+  /** envia assim que o socket abrir (ou já, se abriu antes do registro) */
+  function sendWhenOpen(c: TestClient, msg: unknown) {
+    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+    else c.ws.on('open', () => c.ws.send(JSON.stringify(msg)));
+  }
+
+  async function dbAvailable(): Promise<boolean> {
+    try {
+      const { default: pg } = await import('pg');
+      const c = new pg.Client({ connectionString: DB });
+      await c.connect();
+      await c.end();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function cleanup(codes: string[], usernames: string[]) {
+    const { default: pg } = await import('pg');
+    const c = new pg.Client({ connectionString: DB });
+    await c.connect();
+    for (const code of codes) {
+      await c.query('DELETE FROM rooms WHERE code = $1', [code]);
+      await c.query('DELETE FROM room_seats WHERE code = $1', [code]);
+    }
+    for (const u of usernames) await c.query('DELETE FROM accounts WHERE username = $1', [u]);
+    await c.end();
+  }
+
+  it('a fila monta a mesa com 4 jogadores e começa a partida', async () => {
+    const server = startServer({ port: 8905 });
+    const cs = [client(8905), client(8905), client(8905), client(8905)];
+    sendWhenOpen(cs[0], { t: 'queue', name: 'P1' });
+    const st = await cs[0].next((m) => m.t === 'queue', 30000, 'queue status');
+    expect(st.position).toBe(1);
+    expect(st.size).toBe(1);
+    for (let i = 1; i < 4; i++) sendWhenOpen(cs[i], { t: 'queue', name: `P${i + 1}` });
+    const joined = await Promise.all(cs.map((c, i) => c.next((m) => m.t === 'joined', 30000, `joined ${i}`)));
+    expect(new Set(joined.map((j) => j.code)).size).toBe(1);
+    expect(joined.map((j) => j.seat).sort()).toEqual([0, 1, 2, 3]);
+    const snap = await cs[0].next((m) => m.t === 'snapshot', 30000, 'snap');
+    expect(snap.meta!.started).toBe(true);
+    for (const c of cs) c.ws.close();
+    server.close();
+  }, 90000);
+
+  it('filas de regras diferentes não se misturam; unqueue atualiza posições', async () => {
+    const server = startServer({ port: 8906 });
+    const A = client(8906);
+    const B = client(8906);
+    const R = client(8906);
+    sendWhenOpen(A, { t: 'queue', name: 'A' });
+    await A.next((m) => m.t === 'queue' && m.size === 1, 30000, 'A1');
+    sendWhenOpen(B, { t: 'queue', name: 'B' });
+    await B.next((m) => m.t === 'queue' && m.size === 2, 30000, 'B2');
+    sendWhenOpen(R, { t: 'queue', name: 'R', rules: 'riichi' });
+    const rq = await R.next((m) => m.t === 'queue', 30000, 'R queue');
+    expect(rq.rules).toBe('riichi');
+    expect(rq.size).toBe(1);
+    B.ws.send(JSON.stringify({ t: 'unqueue' }));
+    await B.next((m) => m.t === 'unqueued', 30000, 'unqueued');
+    const a2 = await A.next((m) => m.t === 'queue' && m.size === 1, 30000, 'A re-status');
+    expect(a2.position).toBe(1);
+    for (const c of [A, B, R]) c.ws.close();
+    server.close();
+  }, 90000);
+
+  it('salas ranqueadas exigem conta; stats refletem resultados ranqueados', async () => {
+    if (!(await dbAvailable())) {
+      console.log('postgres unavailable — skipping ranked/stats test');
+      return;
+    }
+    const s1 = startServer({ port: 8907, databaseUrl: DB });
+    await s1.ready;
+
+    const A = client(8907);
+    sendWhenOpen(A, { t: 'create', name: 'SemConta', ranked: true });
+    const err = await A.next((m) => m.t === 'error', 30000, 'ranked sem conta');
+    expect(err.error).toMatch(/ranqueadas/i);
+    A.ws.close();
+
+    const B = client(8907);
+    sendWhenOpen(B, { t: 'account', username: 'ranked-tester' });
+    const acc = await B.next((m) => m.t === 'account', 30000, 'account');
+    const at = acc.accountToken!;
+
+    // grava um resultado pelo mesmo caminho usado no fim de partida ranqueada
+    const { PostgresStore } = await import('../../server/store');
+    const st = new PostgresStore(DB);
+    await st.init();
+    const found = await st.accountByToken(at);
+    expect(found).toBeTruthy();
+    await st.recordRankedResult(found!.id, true, 12000);
+    await st.close();
+
+    B.ws.send(JSON.stringify({ t: 'stats', accountToken: at }));
+    const stats = await B.next((m) => m.t === 'stats', 30000, 'stats');
+    expect(stats.rankedPlayed).toBe(1);
+    expect(stats.rankedWins).toBe(1);
+    expect(stats.rankedPoints).toBe(12000);
+
+    B.ws.send(JSON.stringify({ t: 'create', name: 'ranked-tester', ranked: true, accountToken: at }));
+    const j = await B.next((m) => m.t === 'joined', 30000, 'joined ranked');
+    const snap = await B.next((m) => m.t === 'snapshot', 30000, 'snap ranked');
+    expect(snap.meta!.ranked).toBe(true);
+    B.ws.close();
+    s1.close();
+    await cleanup([j.code!], ['ranked-tester']);
+  }, 90000);
 });

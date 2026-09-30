@@ -74,6 +74,9 @@ interface Room {
   rngTick: number;
   rulesConfig: RulesConfigId;
   saveTimer: NodeJS.Timeout | null;
+  /** ranked rooms record match results on the linked accounts */
+  ranked: boolean;
+  rankedRecorded: boolean;
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -124,6 +127,8 @@ export function startServer(opts: ServerOptions) {
       rngTick: rec.rngTick,
       rulesConfig: rec.rulesConfig,
       saveTimer: null,
+      ranked: rec.ranked ?? false,
+      rankedRecorded: false, // match-over rooms are deleted, never rebuilt
     };
     rooms.set(rec.code, room);
     return room;
@@ -155,6 +160,7 @@ export function startServer(opts: ServerOptions) {
       hostSeat: room.hostSeat,
       started: room.started,
       rngTick: room.rngTick,
+      ranked: room.ranked,
       updatedAt: Date.now(),
     };
   }
@@ -175,6 +181,70 @@ export function startServer(opts: ServerOptions) {
     if (!storeReady) return null;
     const rec = await store.loadRoom(code);
     return rec ? rebuildRoom(rec) : null;
+  }
+
+  /* ---------------- matchmaking (item 4b) ----------------
+   * Quick queue: players enter with {t:'queue'} and the server assembles a
+   * table as soon as four are waiting, then starts it immediately. Optional
+   * `rules` filter keeps rule sets from mixing (queue key = rules id). */
+  interface QueueEntry {
+    ws: WebSocket;
+    name: string;
+    accountId: number | null;
+  }
+  const queues = new Map<string, QueueEntry[]>();
+  /** lets the queue bind a room/seat into another connection's closure */
+  const connBind = new Map<WebSocket, (room: Room, seat: number) => void>();
+
+  function queueStatus(key: string) {
+    const q = queues.get(key) ?? [];
+    q.forEach((e, i) => send(e.ws, { t: 'queue', position: i + 1, size: q.length, rules: key }));
+  }
+
+  function removeFromQueue(ws: WebSocket) {
+    for (const [key, q] of queues) {
+      const i = q.findIndex((e) => e.ws === ws);
+      if (i >= 0) {
+        q.splice(i, 1);
+        queueStatus(key);
+        return;
+      }
+    }
+  }
+
+  function startQueuedRoom(key: string, four: QueueEntry[]) {
+    const code = roomCode();
+    const rules = rulesFor(key as RulesConfigId);
+    const state = newMatch(rules, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, four.map((e) => e.name));
+    const room: Room = {
+      code,
+      state,
+      seats: [null, null, null, null],
+      spectators: [],
+      started: true,
+      hostSeat: 0,
+      pendingCall: new Map(),
+      pendingRob: new Map(),
+      callWaitingSince: Date.now(),
+      handOverAt: null,
+      timer: null,
+      rngTick: 1,
+      rulesConfig: key as RulesConfigId,
+      saveTimer: null,
+      ranked: false,
+      rankedRecorded: false,
+    };
+    four.forEach((e, seat) => {
+      const sess: Session = { ws: e.ws, token: token(), name: e.name, connected: true, lastSeen: Date.now(), accountId: e.accountId };
+      room.seats[seat] = sess;
+      state.players[seat].name = e.name;
+      state.players[seat].isHuman = true;
+      connBind.get(e.ws)?.(room, seat);
+      send(e.ws, { t: 'joined', code, token: sess.token, seat, queued: true });
+      if (e.accountId !== null) void store.linkSeat(code, seat, e.accountId).catch(() => {});
+    });
+    rooms.set(code, room);
+    broadcast(room);
   }
 
   const http = createServer((req, res) => {
@@ -213,6 +283,7 @@ export function startServer(opts: ServerOptions) {
             seats: room.seats.map((s2, i) => (s2 ? { seat: i, name: s2.name, connected: s2.connected, human: true } : null)),
             canStart: seat === room.hostSeat,
             spectators: room.spectators.length,
+            ranked: room.ranked,
           },
         });
       }
@@ -228,6 +299,7 @@ export function startServer(opts: ServerOptions) {
             seats: room.seats.map((s2, i) => (s2 ? { seat: i, name: s2.name, connected: s2.connected, human: true } : null)),
             canStart: false,
             spectators: room.spectators.length,
+            ranked: room.ranked,
           },
         });
       }
@@ -275,7 +347,21 @@ export function startServer(opts: ServerOptions) {
       }
       return;
     }
-    if (s.phase === 'match-over') return;
+    if (s.phase === 'match-over') {
+      if (room.ranked && !room.rankedRecorded) {
+        room.rankedRecorded = true;
+        const scores = s.players.map((p) => p.score);
+        const best = Math.max(...scores);
+        for (let seat = 0; seat < 4; seat++) {
+          const accId = room.seats[seat]?.accountId;
+          if (accId === null || accId === undefined) continue;
+          void store
+            .recordRankedResult(accId, scores[seat] === best, scores[seat])
+            .catch((e) => console.error('ranked record failed', e));
+        }
+      }
+      return;
+    }
 
     if (s.phase === 'draw') {
       // server draws for everyone (humans included) after a short beat
@@ -388,6 +474,11 @@ export function startServer(opts: ServerOptions) {
     let myRoom: Room | null = null;
     let mySeat = -1;
     let spectating = false;
+    connBind.set(ws, (room, seat) => {
+      myRoom = room;
+      mySeat = seat;
+      spectating = false;
+    });
 
     ws.on('message', async (raw) => {
       let msg: Record<string, unknown>;
@@ -403,6 +494,12 @@ export function startServer(opts: ServerOptions) {
         const rulesConfig: RulesConfigId =
           msg.rules === 'riichi' || msg.rules === 'chicken' || msg.rules === 'mcr' ? msg.rules : 'classic';
         const rules = rulesFor(rulesConfig);
+        // ranked rooms require an account (the creator's seat is linked)
+        const wantRanked = msg.ranked === true;
+        if (wantRanked && typeof msg.accountToken !== 'string') {
+          send(ws, { t: 'error', error: 'Salas ranqueadas exigem uma conta.' });
+          return;
+        }
         const state = newMatch(rules, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, [
           String(msg.name || 'Jogador 1'),
           '— vazio —',
@@ -424,6 +521,8 @@ export function startServer(opts: ServerOptions) {
           rngTick: 1,
           rulesConfig,
           saveTimer: null,
+          ranked: wantRanked,
+          rankedRecorded: false,
         };
         const sess: Session = { ws, token: token(), name: String(msg.name || 'Jogador 1'), connected: true, lastSeen: Date.now(), accountId: null };
         room.seats[0] = sess;
@@ -440,6 +539,59 @@ export function startServer(opts: ServerOptions) {
         }
         send(ws, { t: 'joined', code, token: sess.token, seat: 0 });
         broadcast(room);
+        return;
+      }
+
+      if (t === 'queue') {
+        // quick matchmaking: enter the queue for a rules set; a table starts
+        // automatically when four players are waiting
+        const key: RulesConfigId =
+          msg.rules === 'riichi' || msg.rules === 'chicken' || msg.rules === 'mcr' ? msg.rules : 'classic';
+        if (myRoom) {
+          send(ws, { t: 'error', error: 'Você já está em uma sala.' });
+          return;
+        }
+        let accountId: number | null = null;
+        if (typeof msg.accountToken === 'string') {
+          const acc = await store.accountByToken(msg.accountToken);
+          if (acc) accountId = acc.id;
+        }
+        const q = queues.get(key) ?? [];
+        if (!q.some((e) => e.ws === ws)) q.push({ ws, name: String(msg.name || 'Jogador'), accountId });
+        queues.set(key, q);
+        if (q.length >= 4) {
+          queues.set(key, []);
+          startQueuedRoom(key, q.splice(0, 4));
+          queueStatus(key);
+        } else {
+          queueStatus(key);
+        }
+        return;
+      }
+
+      if (t === 'unqueue') {
+        removeFromQueue(ws);
+        send(ws, { t: 'unqueued' });
+        return;
+      }
+
+      if (t === 'stats') {
+        if (typeof msg.accountToken !== 'string') {
+          send(ws, { t: 'error', error: 'Conta não informada.' });
+          return;
+        }
+        const acc = await store.accountByToken(msg.accountToken);
+        if (!acc) {
+          send(ws, { t: 'error', error: 'Conta não encontrada.' });
+          return;
+        }
+        send(ws, {
+          t: 'stats',
+          username: acc.username,
+          rankedPlayed: acc.rankedPlayed ?? 0,
+          rankedWins: acc.rankedWins ?? 0,
+          rankedPoints: acc.rankedPoints ?? 0,
+        });
         return;
       }
 
@@ -597,6 +749,8 @@ export function startServer(opts: ServerOptions) {
     });
 
     ws.on('close', () => {
+      connBind.delete(ws);
+      removeFromQueue(ws);
       if (myRoom && !spectating && mySeat >= 0) scheduleSave(myRoom);
       if (myRoom && spectating) {
         myRoom.spectators = myRoom.spectators.filter((sp) => sp.ws !== ws);
