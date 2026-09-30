@@ -225,9 +225,39 @@ interface Model {
   /** knitted straight: the extra set beyond the knitted groups (sets[0]) */
 }
 
+/* ---------------------------------------------------------------------------
+ * CACHE DE DECOMPOSIÇÕES (item 6.3): decomposeAll é o núcleo quente do
+ * avaliador MCR (chamado para cada vitória E para cada permutação tricotada).
+ * Memorização por assinatura de counts com LRU simples (Map preserva ordem
+ * de inserção). Os arrays retornados são somente-leitura para os chamadores.
+ * ------------------------------------------------------------------------- */
+const DECOMP_CACHE_MAX = 4096;
+const decompCache = new Map<string, Decomp[]>();
+let decompHits = 0;
+let decompMisses = 0;
+
+export function mcrCacheStats(): { hits: number; misses: number; size: number } {
+  return { hits: decompHits, misses: decompMisses, size: decompCache.size };
+}
+
+export function clearMCRCache(): void {
+  decompCache.clear();
+  decompHits = 0;
+  decompMisses = 0;
+}
+
+type Decomp = { pungs: number[]; chows: number[]; pair: number };
+
 /** enumerate every valid 4-sets+pair decomposition of the concealed counts */
-function decomposeAll(c: Counts): { pungs: number[]; chows: number[]; pair: number }[] {
-  const out: { pungs: number[]; chows: number[]; pair: number }[] = [];
+function decomposeAll(c: Counts): Decomp[] {
+  const key = c.join(',');
+  const cached = decompCache.get(key);
+  if (cached) {
+    decompHits++;
+    return cached;
+  }
+  decompMisses++;
+  const out: Decomp[] = [];
   const MAX = 512;
   const walk = (f: number, cc: Counts, pair: number, pungs: number[], chows: number[]) => {
     if (out.length >= MAX) return;
@@ -261,6 +291,11 @@ function decomposeAll(c: Counts): { pungs: number[]; chows: number[]; pair: numb
     }
   };
   walk(0, [...c], -1, [], []);
+  if (decompCache.size >= DECOMP_CACHE_MAX) {
+    const oldest = decompCache.keys().next().value;
+    if (oldest !== undefined) decompCache.delete(oldest);
+  }
+  decompCache.set(key, out);
   return out;
 }
 
@@ -292,9 +327,13 @@ function knittedType(counts: Counts): 'lesser' | 'greater' | null {
 /**
  * 組合龍 Knitted Straight: reserve one of each of 1-4-7/2-5-8/3-6-9 (one
  * suit per group); the remaining 5 tiles must form one set + pair.
- * Returns the reserved knitted faces plus the decomposition of the rest.
+ * MULTI-DECOMPOSIÇÃO (item 6.3): enumera TODAS as variantes — cada
+ * permutação naipe×grupo válida × cada decomposição do resto — e o
+ * avaliador pontua cada uma, ficando com a melhor.
  */
-function knittedStraight(counts: Counts): { rest: { pungs: number[]; chows: number[]; pair: number } } | null {
+export function knittedStraightVariants(counts: Counts): { rest: Decomp }[] {
+  const out: { rest: Decomp }[] = [];
+  const seen = new Set<string>();
   const groups = [
     [0, 3, 6],
     [1, 4, 7],
@@ -323,10 +362,15 @@ function knittedStraight(counts: Counts): { rest: { pungs: number[]; chows: numb
       }
     }
     if (!ok) continue;
-    const rest = decomposeAll(cc).find((d) => d.pungs.length + d.chows.length === 1 && d.pair >= 0);
-    if (rest) return { rest };
+    for (const rest of decomposeAll(cc)) {
+      if (rest.pungs.length + rest.chows.length !== 1 || rest.pair < 0) continue;
+      const key = `${p.join('')}|${rest.pungs.join(',')}|${rest.chows.join(',')}|${rest.pair}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ rest });
+    }
   }
-  return null;
+  return out;
 }
 
 /* -------------------------------- evaluator ------------------------------- */
@@ -711,7 +755,7 @@ export function mcrRuleset(cfg: MCRConfig = MCR_DEFAULTS): Ruleset {
         return true;
       if (meldsCount === 0) {
         if (knittedType(concealedCounts) !== null) return true;
-        if (knittedStraight(concealedCounts) !== null) return true;
+        if (knittedStraightVariants(concealedCounts).length > 0) return true;
       }
       return false;
     },
@@ -742,19 +786,18 @@ export function mcrRuleset(cfg: MCRConfig = MCR_DEFAULTS): Ruleset {
       if (closed) {
         const kt = knittedType(ctx.concealedCounts);
         if (kt) models.push({ type: kt === 'greater' ? 'knittedGreater' : 'knittedLesser', sets: [], pair: -1 });
-        const ks = knittedStraight(ctx.concealedCounts);
-        if (ks) {
-          const s = ks.rest;
+        for (const ks of knittedStraightVariants(ctx.concealedCounts)) {
+          const rest = ks.rest;
           const set: SetInfo =
-            s.pungs.length === 1
+            rest.pungs.length === 1
               ? {
                   kind: 'pung',
-                  face: s.pungs[0],
+                  face: rest.pungs[0],
                   // a pung completed by ron is not concealed
-                  concealed: !(!ctx.selfDrawn && s.pungs[0] === ctx.winFace),
+                  concealed: !(!ctx.selfDrawn && rest.pungs[0] === ctx.winFace),
                 }
-              : { kind: 'chow', face: s.chows[0], concealed: true };
-          models.push({ type: 'knittedStraight', sets: [set], pair: s.pair });
+              : { kind: 'chow', face: rest.chows[0], concealed: true };
+          models.push({ type: 'knittedStraight', sets: [set], pair: rest.pair });
         }
       }
       // standard decompositions (all of them — pick the best-scoring)

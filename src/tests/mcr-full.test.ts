@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mcrRuleset, MCR_FAN_TABLE, MCR_EXCLUDES } from '../game-engine/rules/mcr';
+import { mcrRuleset, MCR_FAN_TABLE, MCR_EXCLUDES, mcrCacheStats, clearMCRCache, knittedStraightVariants } from '../game-engine/rules/mcr';
 import { countsFromFaces } from '../game-engine/traditional/hand';
 import { faceIndex, type TileFace } from '../game-engine/tiles/tiles';
 
@@ -341,5 +341,108 @@ describe('MCR — tabela oficial completa (81 itens)', () => {
       expect(Number(k)).toBeGreaterThanOrEqual(1);
       for (const x of xs) expect(MCR_FAN_TABLE[x - 1]?.n).toBe(x);
     }
+  });
+});
+
+describe('item 6c — cache de decomposições e multi-decomposição', () => {
+  it('fan de espera vem da MELHOR decomposição (par 78999 → 单钓将; 46→5 → 嵌张)', () => {
+    // 78999s + 123m + 456p + 111e, vitória no 9s: a única decomposição
+    // válida usa 99s como par → espera única (79)
+    const r1 = M.score({
+      ...base,
+      concealedCounts: countsFromFaces([
+        sou(7), sou(8), sou(9), sou(9), sou(9),
+        man(1), man(2), man(3),
+        pin(4), pin(5), pin(6),
+        wind(1), wind(1), wind(1),
+      ]),
+      winFace: faceIndex(sou(9)),
+    });
+    expect(has(r1, 79)).toBe(true); // 单钓将
+    expect(has(r1, 73)).toBe(true); // 111e 幺九刻
+
+    // 46s esperando 5s → espera central (78)
+    const r2 = M.score({
+      ...base,
+      concealedCounts: countsFromFaces([
+        sou(4), sou(5), sou(6),
+        man(1), man(2), man(3),
+        pin(4), pin(5), pin(6),
+        wind(1), wind(1), wind(1),
+        dragon(1), dragon(1),
+      ]),
+      winFace: faceIndex(sou(5)),
+    });
+    expect(has(r2, 78)).toBe(true); // 嵌张
+  });
+
+  it('組合龍: variantes enumeradas (resto como trinca) pontuam 组合龙', () => {
+    const counts = countsFromFaces([
+      man(1), man(4), man(7), // grupo 147 em man
+      sou(2), sou(5), sou(8), // grupo 258 em sou
+      pin(3), pin(6), pin(9), // grupo 369 em pin
+      man(5), man(5), man(5),
+      pin(8), pin(8),
+    ]);
+    expect(M.canWin(counts, 0)).toBe(true);
+    const variants = knittedStraightVariants(counts);
+    expect(variants.length).toBeGreaterThanOrEqual(1);
+    expect(variants[0].rest.pungs).toEqual([faceIndex(man(5))]);
+    const res = M.score({ ...base, concealedCounts: counts, winFace: faceIndex(man(5)) });
+    expect(has(res, 35)).toBe(true); // 组合龙
+  });
+
+  it('cache: resultados idênticos com cache frio e quente (150 mãos aleatórias)', () => {
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const FACES: TileFace[] = [];
+    for (const suit of ['man', 'pin', 'sou'] as const)
+      for (let r = 1; r <= 9; r++) FACES.push({ suit, rank: r });
+    for (let r = 1; r <= 4; r++) FACES.push({ suit: 'wind', rank: r });
+    for (let r = 1; r <= 3; r++) FACES.push({ suit: 'dragon', rank: r });
+
+    for (let i = 0; i < 150; i++) {
+      const faces: TileFace[] = [];
+      for (let k = 0; k < 14; k++) faces.push(FACES[Math.floor(rnd() * FACES.length)]);
+      const counts = countsFromFaces(faces);
+      const ctx = {
+        ...base,
+        concealedCounts: counts,
+        winFace: faceIndex(faces[13]),
+        selfDrawn: i % 2 === 0,
+      };
+      clearMCRCache();
+      const cold = M.score(ctx);
+      const warm = M.score(ctx); // segunda chamada bate no cache
+      expect(warm.totalFan).toBe(cold.totalFan);
+      expect(nums(warm).sort((a, b) => a - b)).toEqual(nums(cold).sort((a, b) => a - b));
+    }
+    const st = mcrCacheStats();
+    expect(st.hits).toBeGreaterThan(0);
+    expect(st.size).toBeGreaterThan(0);
+  });
+
+  it('cache: repetir a mesma mão 1500× é mais rápido quente do que fria', () => {
+    // mão rica em decomposições (九蓮宝燈-like) para isolar o custo do walk
+    const ctx = {
+      ...base,
+      concealedCounts: countsFromFaces([
+        man(1), man(1), man(1), man(2), man(3), man(4), man(5),
+        man(6), man(7), man(8), man(9), man(9), man(9),
+        pin(5), pin(5),
+      ]),
+      winFace: faceIndex(man(5)),
+    };
+    const t0 = performance.now();
+    for (let i = 0; i < 1500; i++) {
+      clearMCRCache();
+      M.score(ctx);
+    }
+    const coldMs = performance.now() - t0;
+    const t1 = performance.now();
+    for (let i = 0; i < 1500; i++) M.score(ctx);
+    const warmMs = performance.now() - t1;
+    expect(warmMs).toBeLessThan(coldMs);
+    expect(mcrCacheStats().hits).toBeGreaterThanOrEqual(1500);
   });
 });
