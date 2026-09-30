@@ -27,6 +27,7 @@ import {
 import { HK_DEFAULTS, HK_CHICKEN } from '../../game-engine/rules/hongkong';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
 import { riichiRuleset } from '../../game-engine/rules/riichi';
+import { mcrRuleset } from '../../game-engine/rules/mcr';
 import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
 import { createRng } from '../../game-engine/tiles/rng';
 import { faceName, faceIndex, type TileFace } from '../../game-engine/tiles/tiles';
@@ -51,7 +52,9 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   const ruleset =
     settings.traditional.rules === 'riichi'
       ? riichiRuleset({ handsPerMatch: settings.traditional.hands, renchan: true })
-      : hkRuleset(rules);
+      : settings.traditional.rules === 'mcr'
+        ? mcrRuleset({ handsPerMatch: settings.traditional.hands, renchan: false, minFan: 8 })
+        : hkRuleset(rules);
   const stateRef = useRef<TradState | null>(null);
   if (stateRef.current === null) stateRef.current = newMatch(ruleset, Date.now() >>> 0);
   const humanDecisionRef = useRef<CallDecision | null>(null);

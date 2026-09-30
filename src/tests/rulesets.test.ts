@@ -9,6 +9,7 @@ import {
 } from '../game-engine/traditional/hand';
 import { hkRuleset } from '../game-engine/rules/ruleset';
 import { riichiRuleset } from '../game-engine/rules/riichi';
+import { mcrRuleset } from '../game-engine/rules/mcr';
 import { HK_DEFAULTS } from '../game-engine/rules/hongkong';
 import {
   newMatch,
@@ -437,5 +438,108 @@ describe('item 3 — real defence: wait counting', () => {
     const risky = faceIndex(dragon(3));
     expect(totalRisk(risky, [{ seat: 1, discards: [], meldCount: 0, riichi: true }], vis))
       .toBeGreaterThan(totalRisk(risky, [{ seat: 1, discards: [], meldCount: 0, riichi: false }], vis));
+  });
+});
+
+describe('item 1b — MCR (competition rules) pluggable ruleset', () => {
+  const M = mcrRuleset();
+  const baseCtx = {
+    melds: [] as { kind: 'chi' | 'pon' | 'kan' | 'ankan'; faces: [number, number, number, number?] }[],
+    winFace: 0,
+    selfDrawn: false,
+    seatWind: 2,
+    roundWind: 1,
+    flowers: 0,
+    seasons: 0,
+    winOnKong: false,
+    robbedKong: false,
+    lastTile: false,
+    riichi: false,
+    ippatsu: false,
+    doraIndicators: [],
+    uraIndicators: [],
+  };
+
+  it('rejects a hand below the 8-fan minimum', () => {
+    const res = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([man(2), man(3), man(4), pin(6), pin(7), pin(8), sou(5), sou(6), sou(7), sou(5), sou(5)]),
+      melds: [{ kind: 'chi', faces: [3, 4, 5] }],
+      winFace: faceIndex(sou(7)),
+    });
+    expect(res.meetsMinimum).toBe(false);
+    expect(res.points).toBe(0);
+  });
+
+  it('scores full flush tsumo = 28 fan and MCR payments (fan+8 each)', () => {
+    const res = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([sou(2), sou(3), sou(4), sou(2), sou(3), sou(4), sou(5), sou(6), sou(7), sou(6), sou(7), sou(8), sou(5), sou(5)]),
+      winFace: faceIndex(sou(8)),
+      selfDrawn: true,
+    });
+    expect(res.items.map((i) => i.name)).toContain('Cor Pura (Chinitsu)');
+    expect(res.points).toBe(28); // 24 chinitsu + 2 tanyao + 1 zimo + 1 sem honras
+    const pays = M.payments(res.points, true, null, 0, 0);
+    expect(pays).toEqual([0, 36, 36, 36]); // fan+8 from each opponent
+  });
+
+  it('scores seven pairs with all simples: 29 fan', () => {
+    const res = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([man(2), man(2), man(3), man(3), pin(4), pin(4), pin(5), pin(5), sou(6), sou(6), sou(7), sou(7), sou(8), sou(8)]),
+      winFace: faceIndex(sou(8)),
+      selfDrawn: true,
+    });
+    expect(res.items.map((i) => i.name)).toContain('Sete Pares');
+    expect(res.points).toBe(29); // 24 + 2 tanyao + 1 sem honras + 1 tanki + 1 zimo
+  });
+
+  it('flowers count toward points but NOT toward the 8-fan minimum', () => {
+    // dragon pung + seat&round wind (east) + tanki + zimo = exactly 8 qualifying
+    const res = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([dragon(3), dragon(3), dragon(3), wind(1), wind(1), wind(1), man(2), man(3), man(4), pin(5), pin(6), pin(7), sou(1), sou(1)]),
+      winFace: faceIndex(sou(1)),
+      selfDrawn: true,
+      seatWind: 1,
+      roundWind: 1,
+      flowers: 2,
+    });
+    expect(res.qualifyingFan).toBe(8);
+    expect(res.meetsMinimum).toBe(true);
+    expect(res.points).toBe(10); // 8 + 2 flowers
+    // same hand without the qualifying fans would fail even with many flowers
+    const poor = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([man(2), man(3), man(4), pin(6), pin(7), pin(8), sou(5), sou(6), sou(7), sou(5), sou(5)]),
+      melds: [{ kind: 'chi', faces: [3, 4, 5] }],
+      winFace: faceIndex(sou(7)),
+      flowers: 6,
+    });
+    expect(poor.meetsMinimum).toBe(false);
+    expect(poor.points).toBe(0);
+  });
+
+  it('ron payments: discarder pays fan+8, others pay 8', () => {
+    const res = M.score({
+      ...baseCtx,
+      concealedCounts: countsFromFaces([sou(2), sou(3), sou(4), sou(2), sou(3), sou(4), sou(5), sou(6), sou(7), sou(6), sou(7), sou(8), sou(5), sou(5)]),
+      winFace: faceIndex(sou(8)),
+      selfDrawn: false,
+    });
+    // 24 chinitsu + 2 fechada + 2 tanyao + 2 todas sequências + 1 sem honras = 31
+    expect(res.points).toBe(31);
+    const pays = M.payments(res.points, false, 2, 0, 0);
+    expect(pays).toEqual([0, 8, 39, 8]);
+  });
+
+  it('engine accepts the MCR ruleset: 144 tiles and seven-pairs canWin', () => {
+    const s = newMatch(M, 4242);
+    expect(s.ruleset.name).toBe('MCR (Competição)');
+    expect(s.ruleset.includeBonus).toBe(true);
+    const seven = countsFromFaces([man(2), man(2), man(3), man(3), pin(4), pin(4), pin(5), pin(5), sou(6), sou(6), sou(7), sou(7), sou(8), sou(8)]);
+    expect(M.canWin(seven, 0)).toBe(true);
+    expect(M.canWin(seven, 1)).toBe(false);
   });
 });

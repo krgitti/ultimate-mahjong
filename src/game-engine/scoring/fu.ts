@@ -43,7 +43,7 @@ interface Decomp {
   sequences: [number, number, number][];
 }
 
-function decompose(counts: Counts): Decomp | null {
+export function decompose(counts: Counts): Decomp | null {
   for (let p = 0; p < 34; p++) {
     if (counts[p] < 2) continue;
     const c = [...counts]; // fresh copy per attempt — failed attempts must not leak mutations

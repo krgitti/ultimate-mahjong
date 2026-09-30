@@ -13,7 +13,7 @@ export interface Settings {
     matchMode: MatchMode;
   };
   traditional: {
-    rules: 'classic' | 'chicken' | 'riichi';
+    rules: 'classic' | 'chicken' | 'riichi' | 'mcr';
     hands: 4 | 8 | 16;
     botDifficulty: Difficulty;
   };
