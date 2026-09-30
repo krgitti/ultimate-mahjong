@@ -12,9 +12,10 @@ Motor de regras independente da interface, 100% testado, sem serviços pagos, pr
 npm install          # dependências (React 18, Vite 6, TypeScript, Vitest, Playwright, ws, tsx)
 npm run dev          # desenvolvimento em http://localhost:5173
 npm run server       # servidor multiplayer autoritativo em :8787
+                     # com persistência: UMO_DATABASE_URL=postgres://... npm run server
 npm run build        # typecheck + build de produção em dist/
 npm run preview      # serve o build de produção
-npm test             # 117 testes unitários/de motor/app/servidor (Vitest)
+npm test             # 133 testes unitários/de motor/app/servidor (Vitest)
 npm run typecheck:server
 npx playwright test  # 7 testes e2e na interface real, incl. multiplayer com 2 browsers
                      # (instale antes: npx playwright install --with-deps chromium)
@@ -156,10 +157,10 @@ guarda o estado do PRNG — partidas são reproduzíveis a partir da semente.
 |---|---|---|
 | Motor Solitaire + layouts + gerador/solucionador | `npx vitest run src/tests/solitaire.test.ts` | **47/47 ✅** |
 | Motor tradicional + pontuação + bots | `npx vitest run src/tests/traditional.test.ts` | **36/36 ✅** |
-| Rulesets plugáveis: formas alt., Riichi (fan/pagamentos/riichi) e defesa | `npx vitest run src/tests/rulesets.test.ts` | **16/16 ✅** |
+| Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur, replay | `npx vitest run src/tests/rulesets.test.ts` | **29/29 ✅** |
 | App (jsdom): init, navegação, persistência, jogo real via cliques, erros | `npx vitest run src/tests/app.test.tsx` | **13/13 ✅** |
 | Editor import/export JSON | `npx vitest run src/tests/editor-io.test.ts` | **4/4 ✅** |
-| Servidor autoritativo: 2 clientes WS reais, vazamento zero, reconexão | `npx vitest run src/tests/server.test.ts` | **1/1 ✅** |
+| Servidor autoritativo: 2 clientes WS reais, vazamento zero, reconexão, espectadores, Postgres/contas | `npx vitest run src/tests/server.test.ts` | **4/4 ✅** (Postgres real) |
 | Typecheck app + servidor | `npx tsc --noEmit` / `npm run typecheck:server` | **0 erros** |
 | Build de produção | `npm run build` | **ok** (92 KB gzip) |
 | e2e Playwright (Chromium), incl. multiplayer com 2 browsers | `npx playwright test` | **7/7 ✅** |
@@ -220,9 +221,33 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
   (mensagem de erro clara é exibida).
 - O preview do sandbox usa fontes do sistema do visitante para os glifos CJK (SVG de texto).
 
+## O que ficou pronto nesta rodada
+1. **MCR plugável** (`src/game-engine/rules/mcr.ts`): regras de competição 1998 como terceiro
+   `Ruleset` — pontuação por fan, mínimo 8 (flores fora do mínimo), tabela v1 (88 Treze Órfãos /
+   3 Grandes Dragões · 64 · 24 Sete Pares/Cor Pura · 16 · 8 · 6 · 4 · 2 · 1), pagamentos oficiais
+   (tsumo fan+8 de todos; ron fan+8 do descartador e 8 dos demais), seletor na tela de configurações.
+2. **Dora/ippatsu/fu no Riichi**: indicador virado no morto (a peça não sai do muro), +1 indicador
+   por kan, ura revelada só para vencedores em riichi; ippatsu quebrado por qualquer chamada;
+   contagem completa de fu (`src/game-engine/scoring/fu.ts`): base 20, menzen-ron +10, tsumo +2,
+   pares de valor, trincas/kans, esperas kanchan/penchan/tanki (classificadas pela mão pré-vitória),
+   pinfu 20/30, chiitoi 25, kokushi 30, arredondamento ×10. O indicador aparece na mesa.
+3. **Betaori/pressur no bot hard** (modelo de pressão documentado): *betaori* — com riichi na mesa e
+   mão ≥2 shanten, o shanten é ignorado e tudo é ranked por segurança (genbutsu > visíveis >
+   terminais); *pressur* — tenpai/1-shanten sem riichi: ataque total; *balanceado* — sob ameaça,
+   pool best+1 com peso forte de segurança (tenpai vs riichi ataca só por peças seguras).
+4. **Postgres + contas opcionais** (`server/store.ts`): salas persistidas como *seed + log de
+   ações* (compacto e determinístico graças ao replay); o servidor reconstrói as salas no boot —
+   restart não derruba salas; reconexão **entre dispositivos** pelo token do assento ou por conta
+   opcional (tokens com hash sha256, sem segredo no banco). `UMO_DATABASE_URL` ativa; sem ele,
+   memória (fallback documentado). Testado contra Postgres 17 real.
+5. **Espectadores + replay determinístico**: `spectate` entra como assento −1 (snapshot público,
+   zero mãos ocultas, ações bloqueadas — testado); botão **👁 Assistir** na tela online.
+   `replayMatch(ruleset, {seed, actions})` reproduz uma mão **bit-idêntica** (teste compara
+   mãos/poços/pontos/muro); o rng mulberry32 já era serializável.
+
 ## Próximos passos sugeridos
-1. Módulo MCR plugável na interface `Ruleset`.
-2. Dora/ippatsu/fu completo no Riichi.
-3. Betaori/pressur modelling nos bots hard.
-4. Snapshots de salas em Postgres + reconexão entre dispositivos + contas opcionais.
-5. Espectadores e replay determinístico (o rng já é serializável).
+1. Tabela MCR completa (81 itens) e contagem de fan de flores por posição.
+2. Esperas/tenpai informativos na UI (quais peças e quantas restantes) + nakasuji no bot.
+3. Replay com UI de revisão (linha do tempo, avançar/voltar mão a mão).
+4. Matchmaking rápido no servidor (fila por código opcional) e salas ranqueadas por conta.
+5. Empacotar o servidor (Dockerfile + migrações SQL versionadas) para hospedagem permanente.
