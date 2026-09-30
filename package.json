@@ -12,12 +12,15 @@
     "test:watch": "vitest",
     "server": "tsx server/main.ts",
     "typecheck:server": "tsc -p tsconfig.server.json",
-    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false"
+    "typecheck": "tsc -b --noEmit false --emitDeclarationOnly false",
+    "migrate": "tsx server/migrate.ts"
   },
   "dependencies": {
     "pg": "^8.23.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",
@@ -31,10 +34,8 @@
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^25.0.1",
-    "tsx": "^4.23.15",
     "typescript": "~5.6.3",
     "vite": "^6.0.7",
-    "vitest": "^3.0.0",
-    "ws": "^8.22.0"
+    "vitest": "^3.0.0"
   }
 }

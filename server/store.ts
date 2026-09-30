@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { runMigrations } from './migrate';
 import pg from 'pg';
 import type { ReplayAction } from '../src/game-engine/traditional/engine';
 
@@ -142,33 +143,16 @@ export class MemoryStore implements RoomStore {
 
 export class PostgresStore implements RoomStore {
   private pool: pg.Pool;
+  private url: string;
 
   constructor(databaseUrl: string) {
+    this.url = databaseUrl;
     this.pool = new pg.Pool({ connectionString: databaseUrl, max: 4 });
   }
 
   async init(): Promise<void> {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS rooms (
-        code TEXT PRIMARY KEY,
-        data JSONB NOT NULL,
-        updated_at BIGINT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS accounts (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        token_hash TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS room_seats (
-        code TEXT NOT NULL,
-        seat INT NOT NULL,
-        account_id INT NOT NULL,
-        PRIMARY KEY (code, seat)
-      );
-      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_played INT NOT NULL DEFAULT 0;
-      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_wins INT NOT NULL DEFAULT 0;
-      ALTER TABLE accounts ADD COLUMN IF NOT EXISTS ranked_points INT NOT NULL DEFAULT 0;
-    `);
+    // versioned migrations (server/migrations/*.sql) — idempotent
+    await runMigrations(this.url);
   }
 
   async saveRoom(room: RoomRecord): Promise<void> {

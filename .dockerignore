@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.arena
+.cache
+tests
+src/tests
+*.md
+playwright.config.ts

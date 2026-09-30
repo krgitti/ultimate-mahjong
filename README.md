@@ -156,11 +156,14 @@ guarda o estado do PRNG — partidas são reproduzíveis a partir da semente.
 | Suíte | Comando | Resultado |
 |---|---|---|
 | Motor Solitaire + layouts + gerador/solucionador | `npx vitest run src/tests/solitaire.test.ts` | **47/47 ✅** |
-| Motor tradicional + pontuação + bots | `npx vitest run src/tests/traditional.test.ts` | **36/36 ✅** |
-| Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur, replay | `npx vitest run src/tests/rulesets.test.ts` | **29/29 ✅** |
+| Motor tradicional + pontuação + bots + esperas informativas | `npx vitest run src/tests/traditional.test.ts` | **39/39 ✅** |
+| Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur/nakasuji, replay | `npx vitest run src/tests/rulesets.test.ts` | **30/30 ✅** |
+| MCR tabela oficial completa (81 fan): bandas, exclusões, mãos irregulares, flores | `npx vitest run src/tests/mcr-full.test.ts` | **24/24 ✅** |
+| UI de revisão de replay (linha do tempo, jsdom) | `npx vitest run src/tests/replay-ui.test.tsx` | **3/3 ✅** |
+| Migrações SQL versionadas (banco novo + banco legado) | `npx vitest run src/tests/migrate.test.ts` | **2/2 ✅** (Postgres real) |
 | App (jsdom): init, navegação, persistência, jogo real via cliques, erros | `npx vitest run src/tests/app.test.tsx` | **13/13 ✅** |
 | Editor import/export JSON | `npx vitest run src/tests/editor-io.test.ts` | **4/4 ✅** |
-| Servidor autoritativo: 2 clientes WS reais, vazamento zero, reconexão, espectadores, Postgres/contas | `npx vitest run src/tests/server.test.ts` | **4/4 ✅** (Postgres real) |
+| Servidor autoritativo: WS real, vazamento zero, reconexão, espectadores, Postgres/contas, fila de matchmaking, ranked/stats | `npx vitest run src/tests/server.test.ts` | **7/7 ✅** (Postgres real) |
 | Typecheck app + servidor | `npx tsc --noEmit` / `npm run typecheck:server` | **0 erros** |
 | Build de produção | `npm run build` | **ok** (92 KB gzip) |
 | e2e Playwright (Chromium), incl. multiplayer com 2 browsers | `npx playwright test` | **7/7 ✅** |
@@ -174,6 +177,10 @@ responsividade, tratamento de erros.
 ---
 
 ## Multiplayer online — servidor autoritativo IMPLEMENTADO
+
+Inclui (pedido 5): **fila de matchmaking** (⚡ partida rápida — 4 jogadores, regras
+não se misturam), **salas ranqueadas** por conta (🏆 resultado grava
+partidas/vitórias/pontos) e **revisão de replay** com linha do tempo.
 
 `server/main.ts` (Node + `ws`, `npm run server`, porta 8787) é um servidor **autoritativo real**:
 
@@ -221,7 +228,7 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
   (mensagem de erro clara é exibida).
 - O preview do sandbox usa fontes do sistema do visitante para os glifos CJK (SVG de texto).
 
-## O que ficou pronto nesta rodada
+## O que ficou pronto na rodada anterior (pedido 4)
 1. **MCR plugável** (`src/game-engine/rules/mcr.ts`): regras de competição 1998 como terceiro
    `Ruleset` — pontuação por fan, mínimo 8 (flores fora do mínimo), tabela v1 (88 Treze Órfãos /
    3 Grandes Dragões · 64 · 24 Sete Pares/Cor Pura · 16 · 8 · 6 · 4 · 2 · 1), pagamentos oficiais
@@ -245,9 +252,65 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
    `replayMatch(ruleset, {seed, actions})` reproduz uma mão **bit-idêntica** (teste compara
    mãos/poços/pontos/muro); o rng mulberry32 já era serializável.
 
+## O que ficou pronto nesta rodada (pedido 5)
+1. **Tabela MCR completa — os 81 fan oficiais** (`src/game-engine/rules/mcr.ts` reescrito):
+   todos os elementos do Green Book (WMO, seção 3.8.1 + Apêndice 1) nos 12 níveis
+   (88/64/48/32/24/16/12/8/6/4/2/1), com a **tabela oficial de exclusões** ("does not
+   combine with"; onde a tradução inglesa diverge da edição chinesa — que o prefácio
+   declara prevalecente — seguimos a chinesa, casos documentados no código). Fan por
+   instância (箭刻/暗杠/明杠/幺九刻/四归一), escolha da **melhor decomposição** entre todas
+   as válidas, mãos irregulares (`全不靠`, `七星不靠`, `組合龍`, `九蓮宝燈`, sete pares em
+   escada), `絶張` via peças visíveis contadas pelo engine, `無番和` (chicken hand).
+   **Flores por posição**: 1 fan por peça (#81 oficial) + 1 fan extra quando o número da
+   flor/estação bate com o vento do lugar (house rule `flowerPositionBonus`, padrão
+   ligada); flores seguem sem contar no mínimo de 8 fan. `MCR_FAN_TABLE` exporta a
+   tabela (nº, valor, EN/PT/CN) para UI e testes.
+2. **Esperas informativas + nakasuji**: `waitsWithCounts()` no engine devolve as peças
+   que completam a mão e **quantas cópias restam** (descontando descartes, melds abertos
+   e a própria mão; usa o `canWin` do ruleset, então vale para 7 pares/órfãos/mãos
+   tricotadas). Painel na mesa: com 13 peças mostra as esperas com contagem; com 14
+   mostra **cada descarte que deixa tenpai** e as esperas resultantes. No bot:
+   `dangerScore` reestruturado (perigo de sequência vs par) com **nakasuji** — descarte
+   da peça do meio (4/5/6) desconta leituras de sequência (kanchan/ryanmen) sem afetar
+   shanpon.
+3. **Replay com UI de revisão** (`ReplayReview.tsx`): o gravador determinístico
+   (seed + log de ações) já existia; agora há a revisão — linha do tempo com slider,
+   ⏮ ◀ ▶ ⏭, **salto mão a mão**, lista de ações clicável, mini-tabuleiro por assento
+   (descartes/melds/pontos) e log de eventos. Botões "🎬 Rever partida" (fim) e
+   "Rever até aqui" (fim de mão).
+4. **Matchmaking rápido + salas ranqueadas**: fila no servidor (`{t:'queue'}` por
+   regras — regras diferentes não se misturam; posição/tamanho em tempo real;
+   `{t:'unqueue'}`); com **4 na fila o servidor monta a mesa, senta, vincula contas e
+   começa**. **Salas ranqueadas** (`{t:'create', ranked:true}`, exige conta): no fim da
+   partida o servidor grava `played/wins/points` nas contas vinculadas;
+   `{t:'stats'}` devolve as estatísticas. UI: "⚡ Partida rápida", "🏆 Sala ranqueada",
+   "📊 Estatísticas" e selo 🏆 na mesa.
+5. **Empacotamento para hospedagem permanente**: **migrações SQL versionadas**
+   (`server/migrations/NNN_*.sql` + `server/migrate.ts`): ordem lexicográfica, uma
+   transação por arquivo, controle em `schema_migrations`, idempotente (testado em
+   banco novo **e** em banco legado pré-migrações, dados preservados). O
+   `PostgresStore.init` roda as migrações no boot; CLI: `npm run migrate`.
+   **Dockerfile** (node:20-alpine, deps de produção, healthcheck `/health`,
+   `UMO_DATABASE_URL` opcional) + `.dockerignore`; `tsx`/`ws` movidos para
+   `dependencies`. *O sandbox não tem Docker: a imagem não foi construída aqui — o
+   comando de runtime (`npm run server`) e as migrações foram verificados direto.*
+
+## Hospedagem permanente (servidor)
+```bash
+docker build -t ultimate-mahjong-server .
+docker run --rm -p 8787:8787 \
+  -e UMO_DATABASE_URL=postgres://user:pass@host:5432/umo \
+  ultimate-mahjong-server
+# migrações manuais (opcionais — o boot já roda):
+docker run --rm -e UMO_DATABASE_URL=... ultimate-mahjong-server npx tsx server/migrate.ts
+```
+O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
+(a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
+
 ## Próximos passos sugeridos
-1. Tabela MCR completa (81 itens) e contagem de fan de flores por posição.
-2. Esperas/tenpai informativos na UI (quais peças e quantas restantes) + nakasuji no bot.
-3. Replay com UI de revisão (linha do tempo, avançar/voltar mão a mão).
-4. Matchmaking rápido no servidor (fila por código opcional) e salas ranqueadas por conta.
-5. Empacotar o servidor (Dockerfile + migrações SQL versionadas) para hospedagem permanente.
+1. Rating Elo nas salas ranqueadas + tabela de classificação (leaderboard) por conta.
+2. Chat de mesa e emotes (canal no WS, sem impacto no estado autoritativo).
+3. Otimização do avaliador MCR (cache de decomposições) e resolução multi-decomposição
+   para fan de espera em mãos ambíguas.
+4. Bots perseguindo mãos irregulares MCR (shanten dedicado para 全不靠/組合龍).
+5. CI (GitHub Actions): unit + typecheck + build + Playwright em cada push.
