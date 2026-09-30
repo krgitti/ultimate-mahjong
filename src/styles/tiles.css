@@ -272,3 +272,42 @@
   .trad-layout .center-area { grid-column: 1 / -1; grid-row: 3; }
   .trad-layout .my-area { grid-column: 1 / -1; grid-row: 4; }
 }
+
+/* tenpai information panel (item: esperas informativas) */
+.waits-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: calc(6px * var(--scale));
+  padding: calc(6px * var(--scale)) calc(10px * var(--scale));
+  margin: calc(4px * var(--scale)) auto;
+  max-width: min(760px, 96vw);
+  background: rgba(13, 32, 24, 0.72);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 10px;
+  font-size: calc(12px * var(--scale));
+  color: var(--text-soft, #e8e2cf);
+}
+.waits-label { color: #d4af37; font-weight: 600; white-space: nowrap; }
+.wait-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(3px * var(--scale));
+  padding: calc(2px * var(--scale)) calc(5px * var(--scale));
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+}
+.wait-chip.inner { background: transparent; padding: 0; }
+.wait-chip b { color: #f0e6c8; font-size: 0.95em; }
+.wait-tile {
+  display: inline-flex;
+  width: calc(20px * var(--scale));
+  height: calc(27px * var(--scale));
+  border-radius: 3px;
+  overflow: hidden;
+  background: #f4efdf;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.wait-tile.drop { outline: 1px dashed rgba(212, 175, 55, 0.8); }
+.wait-tile svg { width: 100%; height: 100%; }
+.wait-arrow { opacity: 0.7; }

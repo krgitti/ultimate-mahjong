@@ -18,9 +18,11 @@ import {
   seatWindOf,
   publicView,
   replaceBonusTiles,
+  waitsWithCounts,
   type TradState,
 } from '../game-engine/traditional/engine';
 import { HK_DEFAULTS, HK_CHICKEN } from '../game-engine/rules/hongkong';
+import { mcrRuleset } from '../game-engine/rules/mcr';
 import { computeScoring, computePayments } from '../game-engine/scoring/hongkong-scoring';
 import { isCompleteHand, normalShanten, winningWaits, countsFromFaces } from '../game-engine/traditional/hand';
 import type { TileFace } from '../game-engine/tiles/tiles';
@@ -785,3 +787,61 @@ describe('bots', () => {
 function canAnkanNow(s: TradState, seat: number): boolean {
   return canAnkan(s, seat) !== null;
 }
+
+describe('esperas informativas (item 2) — waitsWithCounts', () => {
+  it('lista as peças que completam a mão e quantas restam', () => {
+    const s = newMatch(HK_DEFAULTS, 777);
+    s.wall.push(...s.players[0].hand); // devolve o deal original ao muro
+    // 234m 567m 234p 67p 99s -> espera 5p/8p
+    s.players[0].hand = idsForFaces(s, [
+      f('man', 2), f('man', 3), f('man', 4),
+      f('man', 5), f('man', 6), f('man', 7),
+      f('pin', 2), f('pin', 3), f('pin', 4),
+      f('pin', 6), f('pin', 7),
+      f('sou', 9), f('sou', 9),
+    ]);
+    // uma cópia do 5-pin já visível no descarte do seat 1
+    const [id5p] = idsForFaces(s, [f('pin', 5)]);
+    s.players[1].discards.push(id5p);
+
+    const w = waitsWithCounts(s, 0, handFaces(s, 0));
+    const byFace = new Map(w.map((x) => [x.face, x.left]));
+    expect(w).toHaveLength(2);
+    expect(byFace.get(faceIndex(f('pin', 5)))).toBe(3); // 4 - 1 visível
+    expect(byFace.get(faceIndex(f('pin', 8)))).toBe(4);
+  });
+
+  it('respeita o ruleset: sete pares em MCR aparece como espera', () => {
+    const s = newMatch(mcrRuleset(), 888);
+    s.wall.push(...s.players[0].hand); // devolve o deal original ao muro
+    // 6 pares + 8s isolado -> só o 8s completa (tanki de sete pares)
+    s.players[0].hand = idsForFaces(s, [
+      f('man', 2), f('man', 2), f('man', 3), f('man', 3),
+      f('pin', 4), f('pin', 4), f('pin', 5), f('pin', 5),
+      f('sou', 6), f('sou', 6), f('sou', 7), f('sou', 7),
+      f('sou', 8),
+    ]);
+    const w = waitsWithCounts(s, 0, handFaces(s, 0));
+    expect(w).toHaveLength(1);
+    expect(w[0].face).toBe(faceIndex(f('sou', 8)));
+  });
+
+  it('peças totalmente visíveis (kabe) aparecem com 0 restantes', () => {
+    const s = newMatch(HK_DEFAULTS, 999);
+    s.wall.push(...s.players[0].hand); // devolve o deal original ao muro
+    s.players[0].hand = idsForFaces(s, [
+      f('man', 2), f('man', 3), f('man', 4),
+      f('man', 5), f('man', 6), f('man', 7),
+      f('pin', 2), f('pin', 3), f('pin', 4),
+      f('pin', 6), f('pin', 7),
+      f('sou', 9), f('sou', 9),
+    ]);
+    // as 4 cópias do 8-pin visíveis: 1 descarte + pon exposto
+    const ids8p = idsForFaces(s, [f('pin', 8), f('pin', 8), f('pin', 8), f('pin', 8)]);
+    s.players[1].discards.push(ids8p[0]);
+    s.players[2].melds.push({ kind: 'pon', tiles: [ids8p[1], ids8p[2], ids8p[3]], from: 1, added: false });
+    const w = waitsWithCounts(s, 0, handFaces(s, 0));
+    const byFace = new Map(w.map((x) => [x.face, x.left]));
+    expect(byFace.get(faceIndex(f('pin', 8)))).toBe(0);
+  });
+});

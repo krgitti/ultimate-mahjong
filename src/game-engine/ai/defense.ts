@@ -17,8 +17,12 @@ import type { Counts } from '../traditional/hand';
  * when far from tenpai), pressur (push when tenpai/close with no riichi) and
  * a balanced mode in between.
  *
- * Limitations (documented): no kanchan-suji (nakasuji) pruning, no turn-order
- * weighting beyond the threat multiplier, no deal-in probability estimates.
+ *  - NAKASUJI: if the opponent discarded the middle tile three ranks away
+ *              (e.g. they dropped the 4), the terminal-side waits (1/7) are
+ *              discounted — the classic middle-suji read.
+ *
+ * Limitations (documented): no turn-order weighting beyond the threat
+ * multiplier, no deal-in probability estimates.
  */
 
 export interface OppInfo {
@@ -58,28 +62,34 @@ export function dangerScore(tile: number, opp: OppInfo, visible: Counts): number
   const vis = visible[tile];
   if (vis >= 4) return 0; // kabe: nobody holds it
 
-  let d = 0;
+  // sequence-based danger (ryanmen/kanchan) vs pair-based danger (shanpon/tanki)
+  let seq = 0;
   if (tile < 27) {
     const r = rankOf(tile);
     // two-sided / penchan protos that wait on `tile`:
     //  proto (t-2,t-1) waits t & t-3 ; proto (t+1,t+2) waits t & t+3
-    if (r >= 2) d += protoDanger([tile - 2, tile - 1], tile - 3, opp, visible);
-    if (r <= 5) d += protoDanger([tile + 1, tile + 2], tile + 3, opp, visible);
+    if (r >= 2) seq += protoDanger([tile - 2, tile - 1], tile - 3, opp, visible);
+    if (r <= 5) seq += protoDanger([tile + 1, tile + 2], tile + 3, opp, visible);
     // kanchan proto (t-1,t+1) waits t
     if (r >= 1 && r <= 7) {
-      if (visible[tile - 1] < 4 && visible[tile + 1] < 4) d += 1;
+      if (visible[tile - 1] < 4 && visible[tile + 1] < 4) seq += 1;
     }
-    // penchan protos: (t-2,t-1) with t = rank2 edge already counted above when r==2?
-    // explicit penchan: proto (1,2) waits 3 ; proto (7,8) waits 7-in-suit
-    if (r === 2 && visible[tile - 2] < 4 && visible[tile - 1] < 4) d += 0; // covered by two-sided branch
   } else {
     // honors: only shanpon/tanki possible
-    d += 1;
+    seq += 1;
   }
-  // shanpon (pair in their hand) / tanki
-  if (vis <= 2) d += 1; // they may hold a pair
-  else if (vis === 3) d += 0; // only tanki of a single leftover — negligible but count 0 (v1)
-  return d;
+  // NAKASUJI (middle-suji): the opponent discarded the middle tile three
+  // ranks away (4 for the 1/7 waits, 5 for 2/8, 6 for 3/9) — they are not
+  // holding that suit region, so the remaining sequence reads (kanchan,
+  // and any ryanmen the suji prune did not already remove) are discounted.
+  if (tile < 27 && seq > 0) {
+    const r = rankOf(tile);
+    const middle = r <= 2 ? tile + 3 : r >= 6 ? tile - 3 : -1;
+    if (middle >= 0 && opp.discards.some((dt) => dt === middle)) seq = Math.max(0, seq - 1);
+  }
+  // shanpon (pair in their hand) / tanki — unaffected by nakasuji
+  const pair = vis <= 2 ? 1 : 0; // vis === 3 leaves only a negligible tanki (v1: 0)
+  return seq + pair;
 }
 
 /** How threatening is this opponent right now (multiplier for danger). */

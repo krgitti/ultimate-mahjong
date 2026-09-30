@@ -404,6 +404,22 @@ describe('item 3 — real defence: wait counting', () => {
     expect(d2).toBeLessThan(d1); // 7 in pond prunes the (5,6) proto waiting 4/7
   });
 
+  it('nakasuji: middle-tile discard discounts sequence reads, not shanpon', () => {
+    const vis = visibleBase();
+    const plain: OppInfo = { seat: 1, discards: [], meldCount: 0, riichi: true };
+    // 2-man: ryanmen (3,4) + kanchan (1,3) + shanpon = 3 baseline
+    const t2 = faceIndex(man(2));
+    expect(dangerScore(t2, plain, vis)).toBe(3);
+    // 5-man in pond: suji kills the ryanmen, nakasuji discounts the kanchan
+    const saw5: OppInfo = { seat: 1, discards: [faceIndex(man(5))], meldCount: 0, riichi: true };
+    expect(dangerScore(t2, saw5, vis)).toBe(1); // shanpon only
+    // 1-man: ryanmen (2,3) + shanpon = 2; the 4-man prune leaves shanpon
+    const t1 = faceIndex(man(1));
+    expect(dangerScore(t1, plain, vis)).toBe(2);
+    const saw4: OppInfo = { seat: 1, discards: [faceIndex(man(4))], meldCount: 0, riichi: true };
+    expect(dangerScore(t1, saw4, vis)).toBe(1);
+  });
+
   it('hard bot folds to safety under riichi threat; medium does not', () => {
     // hand: 345m 234p 234s + lone 5m + 99m + WW.
     // Every tenpai discard (5m/3m/4m) is RAW (dangerous vs the riichi opponent);

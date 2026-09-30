@@ -976,3 +976,41 @@ export function replayMatch(ruleset: Ruleset, record: { seed: number; actions: R
   }
   return s;
 }
+
+/* ------------------------------------------------------------------ */
+/* Tenpai information for the UI                                       */
+/* ------------------------------------------------------------------ */
+
+export interface WaitInfo {
+  face: number;
+  /** copies of this face not visible anywhere (hand+ponds+open melds) */
+  left: number;
+}
+
+/**
+ * Which faces would complete `seat`'s hand (given `handF`) and how many
+ * copies of each are still available. Uses the ruleset's own canWin, so it
+ * honours alternative shapes (seven pairs, orphans, MCR knitted hands).
+ */
+export function waitsWithCounts(s: TradState, seat: number, handF: Tile['face'][]): WaitInfo[] {
+  const p = s.players[seat];
+  const meldCount = p.melds.length;
+  const visible = new Array(34).fill(0);
+  for (const pl of s.players) {
+    for (const id of pl.discards) visible[faceIdxOf(s, id)]++;
+    for (const m of pl.melds) {
+      if (m.kind === 'ankan') continue; // concealed kongs are not public info
+      for (const id of m.tiles) visible[faceIdxOf(s, id)]++;
+    }
+  }
+  const cc = countsFromFaces(handF);
+  for (let f = 0; f < 34; f++) visible[f] += cc[f];
+  const out: WaitInfo[] = [];
+  for (let f = 0; f < 34; f++) {
+    if (cc[f] >= 4) continue;
+    cc[f]++;
+    if (s.ruleset.canWin(cc, meldCount)) out.push({ face: f, left: Math.max(0, 4 - visible[f]) });
+    cc[f]--;
+  }
+  return out;
+}

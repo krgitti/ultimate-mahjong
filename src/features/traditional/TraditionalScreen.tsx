@@ -20,6 +20,7 @@ import {
   handFaces,
   faceOf,
   legalDiscards,
+  waitsWithCounts,
   type TradState,
   type Offer,
   type CallDecision,
@@ -30,7 +31,7 @@ import { riichiRuleset } from '../../game-engine/rules/riichi';
 import { mcrRuleset } from '../../game-engine/rules/mcr';
 import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
 import { createRng } from '../../game-engine/tiles/rng';
-import { faceName, faceIndex, type TileFace } from '../../game-engine/tiles/tiles';
+import { faceName, faceIndex, indexToFace, type TileFace } from '../../game-engine/tiles/tiles';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { Modal } from '../../components/ui';
 import { sfx } from '../../components/sound';
@@ -245,6 +246,36 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   }, [s.phase, s.offers, s.events.length]);
 
   const humanCanRob = s.phase === 'calls-rob' && s.offers.some((o) => o.seat === 0);
+
+  // tenpai information: which tiles complete the hand and how many remain
+  const waitsInfo = useMemo(() => {
+    if (s.phase === 'hand-over' || s.phase === 'match-over') return null;
+    const me = s.players[0];
+    const handF = handFaces(s, 0);
+    if (s.phase === 'discard' && s.current === 0) {
+      // holding 14: which discards leave us tenpai, waiting on what
+      const rows: { dropId: number; dropFace: TileFace; waits: { face: number; left: number }[] }[] = [];
+      for (const id of legalDiscards(s, 0)) {
+        const faces: TileFace[] = [];
+        let dropped = false;
+        for (const tid of me.hand) {
+          if (!dropped && tid === id) {
+            dropped = true;
+            continue;
+          }
+          faces.push(faceOf(s, tid));
+        }
+        const w = waitsWithCounts(s, 0, faces);
+        if (w.length) rows.push({ dropId: id, dropFace: faceOf(s, id), waits: w });
+      }
+      return rows.length ? ({ mode: 'per-discard', rows } as const) : null;
+    }
+    if (handF.length % 3 === 1) {
+      const w = waitsWithCounts(s, 0, handF);
+      if (w.length) return { mode: 'tenpai', waits: w } as const;
+    }
+    return null;
+  }, [s]);
   const humanTurn = s.phase === 'discard' && s.current === 0;
   const canHumanTsumo = humanTurn && canTsumo(s, 0);
   const canHumanAnkan = humanTurn && canAnkan(s, 0) !== null;
@@ -387,6 +418,44 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
 
         <div className="my-area">
           {seatPanel(0)}
+          {waitsInfo && (
+            <div className="waits-panel" role="status" aria-label="Informação de esperas">
+              {waitsInfo.mode === 'tenpai' && (
+                <>
+                  <span className="waits-label">🎯 Em tenpai — esperas:</span>
+                  {waitsInfo.waits.map((w) => (
+                    <span key={w.face} className="wait-chip" title={faceName(indexToFace(w.face))}>
+                      <span className="wait-tile">
+                        <TileFaceArt face={indexToFace(w.face)} />
+                      </span>
+                      <b>×{w.left}</b>
+                    </span>
+                  ))}
+                </>
+              )}
+              {waitsInfo.mode === 'per-discard' && (
+                <>
+                  <span className="waits-label">🎯 Descartes que deixam em tenpai:</span>
+                  {waitsInfo.rows.map((r) => (
+                    <span key={r.dropId} className="wait-chip">
+                      <span className="wait-tile drop" title={`Descartar ${faceName(r.dropFace)}`}>
+                        <TileFaceArt face={r.dropFace} />
+                      </span>
+                      <span className="wait-arrow">→</span>
+                      {r.waits.map((w) => (
+                        <span key={w.face} className="wait-chip inner" title={faceName(indexToFace(w.face))}>
+                          <span className="wait-tile">
+                            <TileFaceArt face={indexToFace(w.face)} />
+                          </span>
+                          <b>×{w.left}</b>
+                        </span>
+                      ))}
+                    </span>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
           <div className="hand-row" role="list" aria-label="Sua mão">
             {sortedHand.map((id) => {
               const isDrawn = id === s.drawnTile;
