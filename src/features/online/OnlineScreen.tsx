@@ -42,6 +42,9 @@ export function OnlineScreen() {
   const [code, setCode] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.token'));
+  const [accountToken, setAccountToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.accountToken'));
+  const [accountName, setAccountName] = useState(() => sessionStorage.getItem('umo.online.accountName') || '');
+  const [accountUser, setAccountUser] = useState('');
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [actions, setActions] = useState<MyActions>({ legal: [], canTsumo: false, canRiichi: false });
@@ -59,6 +62,15 @@ export function OnlineScreen() {
     };
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
+      if (msg.t === 'account') {
+        const at = String(msg.accountToken || '');
+        sessionStorage.setItem('umo.online.accountToken', at);
+        sessionStorage.setItem('umo.online.accountName', String(msg.username || ''));
+        setAccountToken(at);
+        setAccountName(String(msg.username || ''));
+        setError(null);
+        return;
+      }
       if (msg.t === 'joined') {
         setCode(msg.code);
         setToken(msg.token);
@@ -115,7 +127,7 @@ export function OnlineScreen() {
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogador" />
         </label>
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador' })}>
+          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', accountToken: accountToken ?? undefined })}>
             ✚ Criar sala
           </button>
         </div>
@@ -127,9 +139,27 @@ export function OnlineScreen() {
             style={{ width: 180 }}
             maxLength={4}
           />
-          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador' })}>Entrar na sala</button>
+          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador', accountToken: accountToken ?? undefined })}>Entrar na sala</button>
           <button className="btn" onClick={() => connect({ t: 'spectate', code: joinCode, name: name || 'Espectador' })}>👁 Assistir</button>
         </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <input
+            value={accountUser}
+            onChange={(e) => setAccountUser(e.target.value)}
+            placeholder="Conta (opcional)"
+            style={{ width: 180 }}
+            maxLength={32}
+          />
+          <button className="btn" onClick={() => connect({ t: 'account', username: accountUser })}>Criar conta</button>
+          {accountToken && (
+            <button className="btn" onClick={() => connect({ t: 'join', accountToken })}>↻ Retomar minha sala</button>
+          )}
+        </div>
+        {accountToken && (
+          <p className="muted small" style={{ marginTop: 6 }}>
+            Conta <b>{accountName}</b> ativa — suas salas podem ser retomadas em outro dispositivo.
+          </p>
+        )}
         {error && <p style={{ color: '#ffd9d7', marginTop: 10 }}>{error}</p>}
         <p className="muted small" style={{ marginTop: 14 }}>
           Requer o servidor rodando: <code>npm run server</code> (porta 8787). Sem contas, sem banco remoto —

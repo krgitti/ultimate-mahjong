@@ -22,6 +22,7 @@ interface Snap {
   meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number };
   code?: string;
   token?: string;
+  accountToken?: string;
   reconnected?: boolean;
   spectator?: boolean;
   error?: string;
@@ -32,10 +33,10 @@ interface TestClient {
   next: (pred?: (m: Snap) => boolean, timeout?: number, label?: string) => Promise<Snap>;
 }
 
-function client(): TestClient {
+function client(port: number = PORT): TestClient {
   const queue: Snap[] = [];
   const waiters: { pred: (m: Snap) => boolean; res: (m: Snap) => void; rej: (e: Error) => void }[] = [];
-  const ws = new WebSocket(`ws://127.0.0.1:${PORT}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   ws.on('message', (raw) => {
     const m = JSON.parse(String(raw)) as Snap;
     const i = waiters.findIndex((w) => w.pred(m));
@@ -233,5 +234,93 @@ describe('item 4 — authoritative server + reconnection', () => {
     A.ws.close();
     B2.ws.close();
     server.close();
+  }, 60000);
+});
+
+describe('item 4b — Postgres snapshots, cross-device rejoin & optional accounts', () => {
+  const DB = process.env.UMO_TEST_DATABASE_URL || 'postgres://umo:umo@127.0.0.1:5432/umo';
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  async function dbAvailable(): Promise<boolean> {
+    try {
+      const { default: pg } = await import('pg');
+      const c = new pg.Client({ connectionString: DB });
+      await c.connect();
+      await c.end();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function cleanup(codes: string[], usernames: string[]) {
+    const { default: pg } = await import('pg');
+    const c = new pg.Client({ connectionString: DB });
+    await c.connect();
+    for (const code of codes) {
+      await c.query('DELETE FROM rooms WHERE code = $1', [code]);
+      await c.query('DELETE FROM room_seats WHERE code = $1', [code]);
+    }
+    for (const u of usernames) await c.query('DELETE FROM accounts WHERE username = $1', [u]);
+    await c.end();
+  }
+
+  it('a room survives a full server restart and the seat token still works', async () => {
+    if (!(await dbAvailable())) return console.log('postgres unavailable — skipped');
+    const s1 = startServer({ port: 8901, databaseUrl: DB });
+    await s1.ready;
+    const A = client(8901);
+    A.ws.on('open', () => A.ws.send(JSON.stringify({ t: 'create', name: 'Ana' })));
+    const j = await A.next((m) => m.t === 'joined', 30000, 'A joined (s1)');
+    const code = j.code!;
+    const tokenA = j.token!;
+    A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+    await A.next((m) => m.t === 'snapshot' && m.meta!.started, 30000, 'started (s1)');
+    await sleep(900); // let the debounced save flush
+    A.ws.close();
+    s1.close();
+
+    // brand-new server process state, same database
+    const s2 = startServer({ port: 8902, databaseUrl: DB });
+    await s2.ready;
+    const A2 = client(8902);
+    A2.ws.on('open', () => A2.ws.send(JSON.stringify({ t: 'join', code, name: 'Ana', token: tokenA })));
+    const re = await A2.next((m) => m.t === 'joined' && !!m.reconnected, 30000, 'rejoin after restart');
+    expect(re.seat).toBe(0);
+    const snap = await A2.next((m) => m.t === 'snapshot', 30000, 'snapshot after restart');
+    expect(snap.meta!.started).toBe(true);
+    expect(snap.view!.players[0].handCount).toBeGreaterThan(0);
+    A2.ws.close();
+    s2.close();
+    await cleanup([code], []);
+  }, 60000);
+
+  it('optional account: rejoin the same seat from a different device without the room code', async () => {
+    if (!(await dbAvailable())) return console.log('postgres unavailable — skipped');
+    const username = `utest-${Date.now()}`;
+    const s1 = startServer({ port: 8903, databaseUrl: DB });
+    await s1.ready;
+    const C = client(8903);
+    C.ws.on('open', () => C.ws.send(JSON.stringify({ t: 'account', username })));
+    const acc = await C.next((m) => m.t === 'account', 30000, 'account created');
+    const accountToken = acc.accountToken!;
+    C.ws.send(JSON.stringify({ t: 'create', name: 'Conta', accountToken }));
+    const j = await C.next((m) => m.t === 'joined', 30000, 'create with account');
+    const code = j.code!;
+    await sleep(900);
+    C.ws.close();
+    s1.close();
+
+    // "another device": only the account token, no code, no seat token
+    const s2 = startServer({ port: 8904, databaseUrl: DB });
+    await s2.ready;
+    const D = client(8904);
+    D.ws.on('open', () => D.ws.send(JSON.stringify({ t: 'join', accountToken })));
+    const re = await D.next((m) => m.t === 'joined' && !!m.reconnected, 30000, 'account rejoin');
+    expect(re.seat).toBe(0);
+    expect(re.code).toBe(code);
+    D.ws.close();
+    s2.close();
+    await cleanup([code], [username]);
   }, 60000);
 });
