@@ -38,6 +38,7 @@ import { riichiRuleset } from '../src/game-engine/rules/riichi';
 import { mcrRuleset } from '../src/game-engine/rules/mcr';
 import { replayMatch, type TradState as _TS } from '../src/game-engine/traditional/engine';
 import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type RulesConfigId } from './store';
+import { eloDeltas } from './elo';
 import { chooseDiscard, chooseCall, type BotView } from '../src/game-engine/ai/bot';
 import { createRng } from '../src/game-engine/tiles/rng';
 import { faceIndex } from '../src/game-engine/tiles/tiles';
@@ -352,13 +353,25 @@ export function startServer(opts: ServerOptions) {
         room.rankedRecorded = true;
         const scores = s.players.map((p) => p.score);
         const best = Math.max(...scores);
+        const linked: { seat: number; accId: number }[] = [];
         for (let seat = 0; seat < 4; seat++) {
           const accId = room.seats[seat]?.accountId;
-          if (accId === null || accId === undefined) continue;
-          void store
-            .recordRankedResult(accId, scores[seat] === best, scores[seat])
-            .catch((e) => console.error('ranked record failed', e));
+          if (accId !== null && accId !== undefined) linked.push({ seat, accId });
         }
+        // Elo: zero-sum across the LINKED accounts (needs at least two);
+        // stats are recorded for every linked account either way.
+        void (async () => {
+          const newElo = new Map<number, number>();
+          if (linked.length >= 2) {
+            const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
+            const elos = accs.map((a) => a?.elo ?? 1500);
+            const deltas = eloDeltas(elos, linked.map((l) => scores[l.seat]));
+            linked.forEach((l, i) => newElo.set(l.accId, Math.max(0, (accs[i]?.elo ?? 1500) + deltas[i])));
+          }
+          for (const l of linked) {
+            await store.recordRankedResult(l.accId, scores[l.seat] === best, scores[l.seat], newElo.get(l.accId));
+          }
+        })().catch((e) => console.error('ranked record failed', e));
       }
       return;
     }
@@ -591,7 +604,15 @@ export function startServer(opts: ServerOptions) {
           rankedPlayed: acc.rankedPlayed ?? 0,
           rankedWins: acc.rankedWins ?? 0,
           rankedPoints: acc.rankedPoints ?? 0,
+          elo: acc.elo ?? 1500,
         });
+        return;
+      }
+
+      if (t === 'leaderboard') {
+        // top accounts by Elo (public data: username + numbers only)
+        const rows = await store.leaderboard(20);
+        send(ws, { t: 'leaderboard', rows });
         return;
       }
 

@@ -48,7 +48,8 @@ export function OnlineScreen() {
   const [accountUser, setAccountUser] = useState('');
   const [rulesSel, setRulesSel] = useState<'classic' | 'chicken' | 'riichi' | 'mcr'>('classic');
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
-  const [stats, setStats] = useState<{ played: number; wins: number; points: number } | null>(null);
+  const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number } | null>(null);
+  const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [actions, setActions] = useState<MyActions>({ legal: [], canTsumo: false, canRiichi: false });
@@ -84,7 +85,11 @@ export function OnlineScreen() {
         return;
       }
       if (msg.t === 'stats') {
-        setStats({ played: msg.rankedPlayed, wins: msg.rankedWins, points: msg.rankedPoints });
+        setStats({ played: msg.rankedPlayed, wins: msg.rankedWins, points: msg.rankedPoints, elo: msg.elo ?? 1500 });
+        return;
+      }
+      if (msg.t === 'leaderboard') {
+        setLeader((msg.rows ?? []) as typeof leader);
         return;
       }
       if (msg.t === 'joined') {
@@ -208,12 +213,32 @@ export function OnlineScreen() {
           {accountToken && (
             <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>📊 Estatísticas</button>
           )}
+          <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>🏅 Classificação</button>
         </div>
         {stats && (
           <p className="muted small" style={{ marginTop: 6 }}>
             🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
-            <b>{stats.points}</b> pontos
+            <b>{stats.points}</b> pontos · ⭐ Elo <b>{stats.elo}</b>
           </p>
+        )}
+        {leader && (
+          <div className="panel" style={{ marginTop: 8 }}>
+            <h3 className="panel-title">🏅 Classificação (Elo)</h3>
+            {leader.length === 0 ? (
+              <p className="muted small">Nenhuma conta ainda.</p>
+            ) : (
+              leader.map((r, i) => (
+                <div key={r.username} className="row small" style={{ marginBottom: 4 }}>
+                  <span style={{ width: 28 }}>{i + 1}.</span>
+                  <span style={{ flex: 1 }}>{r.username}</span>
+                  <span>⭐ <b>{r.elo}</b></span>
+                  <span className="muted" style={{ width: 110, textAlign: 'right' }}>
+                    {r.rankedWins}V/{Math.max(0, r.rankedPlayed - r.rankedWins)}D · {r.rankedPlayed}P
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
         )}
         {accountToken && (
           <p className="muted small" style={{ marginTop: 6 }}>

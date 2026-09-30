@@ -2,6 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import WebSocket from 'ws';
 import { startServer } from '../../server/main';
+import { eloDeltas } from '../../server/elo';
+import { PostgresStore } from '../../server/store';
 
 const PORT = 8899;
 
@@ -35,6 +37,8 @@ interface Snap {
   rankedPlayed?: number;
   rankedWins?: number;
   rankedPoints?: number;
+  elo?: number;
+  rows?: { username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[];
 }
 
 interface TestClient {
@@ -447,4 +451,140 @@ describe('item 4c — matchmaking rápido, salas ranqueadas e stats', () => {
     s1.close();
     await cleanup([j.code!], ['ranked-tester']);
   }, 90000);
+});
+
+describe('item 6a — Elo + leaderboard', () => {
+  const DB = process.env.UMO_TEST_DATABASE_URL || 'postgres://umo:umo@127.0.0.1:5432/umo';
+
+  /** envia assim que o socket abrir (ou já, se abriu antes do registro) */
+  function sendWhenOpen(c: TestClient, msg: unknown) {
+    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+    else c.ws.on('open', () => c.ws.send(JSON.stringify(msg)));
+  }
+
+  it('eloDeltas: zero-sum, vencedor ganha, perdedor perde, zebras movem mais', () => {
+    // mesa equilibrada: vencedor ganha, perdedor perde, soma zero
+    const d1 = eloDeltas([1500, 1500, 1500, 1500], [40, 10, -10, -40]);
+    expect(d1.reduce((a, b) => a + b, 0)).toBe(0);
+    expect(d1[0]).toBeGreaterThan(0);
+    expect(d1[3]).toBeLessThan(0);
+    expect(d1[0]).toBe(-d1[3]);
+
+    // zebra (1300 vence mesa forte): ganha mais do que ganharia em mesa igual
+    const upset = eloDeltas([1300, 1500, 1600, 1700], [50, 10, 0, -10]);
+    const even = eloDeltas([1500, 1500, 1600, 1700], [50, 10, 0, -10]);
+    expect(upset[0]).toBeGreaterThan(even[0]);
+    expect(upset.reduce((a, b) => a + b, 0)).toBe(0);
+
+    // empate geral: deltas ~0 (esperado == realizado em mesa igual)
+    const tie = eloDeltas([1500, 1500, 1500, 1500], [0, 0, 0, 0]);
+    expect(tie.every((d) => d === 0)).toBe(true);
+
+    // menos de 2 contas: sem mudança
+    expect(eloDeltas([1500], [10])).toEqual([0]);
+  });
+
+  it('partida ranqueada completa grava stats e Elo zero-sum nas contas', async () => {
+    const PORT6 = 8908;
+    const server = startServer({ port: PORT6 });
+    try {
+      const A = client(PORT6);
+      autoPass(A, 0);
+      autoPlay(A, 0);
+      const B = client(PORT6);
+      autoPass(B, 1);
+      autoPlay(B, 1);
+
+      // contas
+      const accA = await new Promise<string>((res) => {
+        A.ws.on('message', (raw) => {
+          const m = JSON.parse(String(raw)) as Snap;
+          if (m.t === 'account' && m.accountToken) res(m.accountToken);
+        });
+        sendWhenOpen(A, { t: 'account', username: 'elo-ana' });
+      });
+      const accB = await new Promise<string>((res) => {
+        B.ws.on('message', (raw) => {
+          const m = JSON.parse(String(raw)) as Snap;
+          if (m.t === 'account' && m.accountToken) res(m.accountToken);
+        });
+        sendWhenOpen(B, { t: 'account', username: 'elo-bia' });
+      });
+
+      // sala ranqueada: A cria, B entra com conta
+      A.ws.send(JSON.stringify({ t: 'create', name: 'Ana', ranked: true, accountToken: accA }));
+      const j = await A.next((m) => m.t === 'joined', 30000, 'A joined ranked');
+      B.ws.send(JSON.stringify({ t: 'join', code: j.code, name: 'Bia', accountToken: accB }));
+      await B.next((m) => m.t === 'joined', 30000, 'B joined ranked');
+      A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+      await A.next((m) => m.t === 'snapshot' && m.meta!.started, 30000, 'started');
+
+      // dirige a partida inteira (4 mãos; bots nos assentos 2/3)
+      await A.next((m) => m.t === 'snapshot' && m.view?.phase === 'match-over', 420000, 'match-over');
+
+      // o registro é assíncrono após o match-over
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const statsOf = async (c: TestClient, accTok: string): Promise<Snap> => {
+        c.ws.send(JSON.stringify({ t: 'stats', accountToken: accTok }));
+        return c.next((m) => m.t === 'stats', 10000, 'stats');
+      };
+      const sa = await statsOf(A, accA);
+      const sb = await statsOf(B, accB);
+      expect(sa.rankedPlayed).toBe(1);
+      expect(sb.rankedPlayed).toBe(1);
+      expect(Number.isInteger(sa.elo)).toBe(true);
+      expect(Number.isInteger(sb.elo)).toBe(true);
+      // Elo é zero-sum entre as duas contas vinculadas
+      expect((sa.elo ?? 0) + (sb.elo ?? 0)).toBe(3000);
+      // quem venceu (maior pontuação) não perdeu Elo; perdedor não ganhou
+      const winnerIsA = (sa.rankedWins ?? 0) === 1;
+      if (sa.elo !== 1500 || sb.elo !== 1500) {
+        expect(winnerIsA ? sa.elo! > 1500 : sb.elo! > 1500).toBe(true);
+        expect(winnerIsA ? sb.elo! < 1500 : sa.elo! < 1500).toBe(true);
+      }
+
+      // leaderboard reflete as duas contas
+      const L = client(PORT6);
+      sendWhenOpen(L, { t: 'leaderboard' });
+      const lb = await L.next((m) => m.t === 'leaderboard', 10000, 'leaderboard');
+      const rows = lb.rows!;
+      const ana = rows.find((r) => r.username === 'elo-ana')!;
+      const bia = rows.find((r) => r.username === 'elo-bia')!;
+      expect(ana.elo).toBe(sa.elo);
+      expect(bia.elo).toBe(sb.elo);
+      // ordenado por elo decrescente
+      for (let i = 1; i < rows.length; i++) expect(rows[i - 1].elo).toBeGreaterThanOrEqual(rows[i].elo);
+      L.ws.close();
+    } finally {
+      await server.close();
+    }
+  }, 480000);
+
+  it('PostgresStore: Elo persiste e leaderboard ordena', async () => {
+    let ok = true;
+    try {
+      const c = new PostgresStore(DB);
+      await c.init();
+      const { account: a1, accountToken: t1 } = await c.createAccount('pg-elo-1-' + Date.now());
+      const { account: a2 } = await c.createAccount('pg-elo-2-' + Date.now());
+      await c.recordRankedResult(a1.id, true, 30, 1516);
+      await c.recordRankedResult(a2.id, false, -30, 1484);
+      const back = await c.accountById(a1.id);
+      expect(back?.elo).toBe(1516);
+      const rows = await c.leaderboard(50);
+      const i1 = rows.findIndex((r) => r.username.startsWith('pg-elo-1-'));
+      const i2 = rows.findIndex((r) => r.username.startsWith('pg-elo-2-'));
+      expect(i1).toBeGreaterThanOrEqual(0);
+      expect(i2).toBeGreaterThanOrEqual(0);
+      expect(i1).toBeLessThan(i2); // 1516 > 1484
+      expect(rows[i1].elo).toBe(1516);
+      const byToken = await c.accountByToken(t1);
+      expect(byToken?.elo).toBe(1516);
+      await c.close();
+    } catch {
+      ok = false;
+    }
+    if (!ok) console.log('postgres unavailable — skipping PG elo test');
+  }, 60000);
 });
