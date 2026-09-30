@@ -311,3 +311,69 @@
 .wait-tile.drop { outline: 1px dashed rgba(212, 175, 55, 0.8); }
 .wait-tile svg { width: 100%; height: 100%; }
 .wait-arrow { opacity: 0.7; }
+
+/* replay review (item 3) */
+.replay-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(4, 12, 8, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.replay-review {
+  width: min(920px, 96vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #0e2018;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 12px;
+  padding: 14px;
+  color: #e8e2cf;
+}
+.replay-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.replay-step { flex: 1; opacity: 0.85; font-size: 0.9em; }
+.replay-board { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.replay-seat {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px solid transparent;
+}
+.replay-seat.me { border-color: rgba(212, 175, 55, 0.5); }
+.replay-seat-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.replay-meta { font-size: 0.78em; opacity: 0.75; }
+.replay-melds, .replay-pond { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 4px; }
+.replay-meld { display: inline-flex; gap: 1px; margin-right: 6px; padding: 1px; outline: 1px solid rgba(255,255,255,0.15); border-radius: 3px; }
+.replay-tile {
+  display: inline-flex;
+  width: 18px;
+  height: 24px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #f4efdf;
+  flex: none;
+}
+.replay-tile svg { width: 100%; height: 100%; }
+.replay-log { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; font-size: 0.78em; opacity: 0.8; }
+.replay-event { background: rgba(255, 255, 255, 0.07); padding: 2px 6px; border-radius: 5px; }
+.replay-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.replay-slider { flex: 1; min-width: 120px; }
+.replay-timeline { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.timeline-item {
+  width: 100%;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  color: inherit;
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.timeline-item.current { border-color: #d4af37; background: rgba(212, 175, 55, 0.15); }
+.timeline-item.future { opacity: 0.45; }
+.timeline-n { opacity: 0.6; font-variant-numeric: tabular-nums; margin-right: 4px; }
+.replay-end { font-size: 0.8em; opacity: 0.7; margin-top: 8px; }

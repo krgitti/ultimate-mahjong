@@ -21,6 +21,7 @@ import {
   faceOf,
   legalDiscards,
   waitsWithCounts,
+  serializeReplay,
   type TradState,
   type Offer,
   type CallDecision,
@@ -33,6 +34,7 @@ import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../
 import { createRng } from '../../game-engine/tiles/rng';
 import { faceName, faceIndex, indexToFace, type TileFace } from '../../game-engine/tiles/tiles';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
+import { ReplayReview } from './ReplayReview';
 import { Modal } from '../../components/ui';
 import { sfx } from '../../components/sound';
 
@@ -246,6 +248,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   }, [s.phase, s.offers, s.events.length]);
 
   const humanCanRob = s.phase === 'calls-rob' && s.offers.some((o) => o.seat === 0);
+  const [showReplay, setShowReplay] = useState(false);
 
   // tenpai information: which tiles complete the hand and how many remain
   const waitsInfo = useMemo(() => {
@@ -625,6 +628,9 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
             >
               {s.handNumber >= rules.handsPerMatch ? 'Ver resultado final' : 'Próxima mão'}
             </button>
+            <button className="btn" onClick={() => setShowReplay(true)}>
+              🎬 Rever até aqui
+            </button>
           </div>
         </Modal>
       )}
@@ -651,11 +657,20 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
             <button className="btn btn-primary" onClick={() => setMatchOverAck(true)}>
               Fechar
             </button>
+            <button className="btn" onClick={() => setShowReplay(true)}>
+              🎬 Rever partida
+            </button>
             <button className="btn" onClick={newMatchNow}>
               Nova partida
             </button>
           </div>
         </Modal>
+      )}
+
+      {showReplay && (
+        <div className="replay-overlay" role="dialog" aria-modal="true" aria-label="Revisão da partida">
+          <ReplayReview record={serializeReplay(s)} ruleset={s.ruleset} onClose={() => setShowReplay(false)} />
+        </div>
       )}
     </div>
   );
