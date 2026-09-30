@@ -26,7 +26,7 @@ import {
 import { dangerScore, totalRisk, threatLevel, type OppInfo } from '../game-engine/ai/defense';
 import { chooseDiscard, type BotView } from '../game-engine/ai/bot';
 import { createRng } from '../game-engine/tiles/rng';
-import { faceIndex, type TileFace } from '../game-engine/tiles/tiles';
+import { faceIndex, indexToFace, type TileFace } from '../game-engine/tiles/tiles';
 
 const F = (suit: TileFace['suit'], rank: number): TileFace => ({ suit, rank });
 const man = (r: number) => F('man', r);
@@ -541,5 +541,51 @@ describe('item 1b — MCR (competition rules) pluggable ruleset', () => {
     const seven = countsFromFaces([man(2), man(2), man(3), man(3), pin(4), pin(4), pin(5), pin(5), sou(6), sou(6), sou(7), sou(7), sou(8), sou(8)]);
     expect(M.canWin(seven, 0)).toBe(true);
     expect(M.canWin(seven, 1)).toBe(false);
+  });
+});
+
+describe('item 3 — betaori & pressur (hard bot pressure model)', () => {
+  const mkView = (hand: TileFace[], opponents: OppInfo[], wallCount = 30): BotView => ({
+    seat: 0,
+    seatWind: 1,
+    roundWind: 1,
+    hand,
+    melds: [],
+    bonusFaces: [],
+    visibleDiscards: opponents.flatMap((o) => o.discards.map((i) => indexToFace(i))),
+    otherMeldFaces: [],
+    wallCount,
+    turnNumber: 14,
+    opponents,
+  });
+
+  it('betaori: vs riichi and 2+ shanten, hard discards the genbutsu even breaking a set', () => {
+    const hand: TileFace[] = [man(2), man(3), man(4), pin(6), pin(7), pin(8), sou(2), sou(5), sou(9), man(1), man(9), pin(1), sou(3), sou(4)];
+    const opponents: OppInfo[] = [{ seat: 1, discards: [faceIndex(pin(7)), faceIndex(man(5))], meldCount: 0, riichi: true }];
+    const idx = chooseDiscard(mkView(hand, opponents), 'hard', createRng(11));
+    expect(faceIndex(hand[idx])).toBe(faceIndex(pin(7))); // genbutsu beats shape
+    // medium (no defence) keeps offence: never throws the middle of 678p
+    const med = chooseDiscard({ ...mkView(hand, opponents), opponents: undefined }, 'medium', createRng(11));
+    expect(faceIndex(hand[med])).not.toBe(faceIndex(pin(7)));
+  });
+
+  it('pressur: tenpai hand pushes through meld threats (keeps tenpai)', () => {
+    const hand: TileFace[] = [man(2), man(3), man(4), pin(5), pin(6), pin(7), sou(7), sou(8), sou(9), sou(5), sou(5), sou(8), sou(9), man(1)];
+    const opponents: OppInfo[] = [{ seat: 2, discards: [], meldCount: 3, riichi: false }];
+    const idx = chooseDiscard(mkView(hand, opponents), 'hard', createRng(5));
+    expect(faceIndex(hand[idx])).toBe(faceIndex(man(1)));
+    const rest = hand.filter((_, k) => k !== idx);
+    expect(shanten(countsFromFaces(rest), 0)).toBe(0); // still tenpai
+  });
+
+  it('vs riichi at tenpai: balanced mode attacks only through safe tiles', () => {
+    // tenpai waiting 7s; the 1m is genbutsu (in the riichi pond) — balanced
+    // mode must keep tenpai by discarding the SAFE 1m, not fold and not raw-push.
+    const hand: TileFace[] = [man(2), man(3), man(4), pin(5), pin(6), pin(7), sou(7), sou(8), sou(9), sou(5), sou(5), sou(8), sou(9), man(1)];
+    const opponents: OppInfo[] = [{ seat: 2, discards: [faceIndex(man(1)), faceIndex(pin(9))], meldCount: 1, riichi: true }];
+    const idx = chooseDiscard(mkView(hand, opponents), 'hard', createRng(9));
+    expect(faceIndex(hand[idx])).toBe(faceIndex(man(1))); // safe tenpai-keeping discard
+    const rest = hand.filter((_, k) => k !== idx);
+    expect(shanten(countsFromFaces(rest), 0)).toBe(0);
   });
 });

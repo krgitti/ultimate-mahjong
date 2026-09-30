@@ -12,8 +12,13 @@ import type { Counts } from '../traditional/hand';
  *              that two-sided proto-sequence is pruned (they would be furiten on it).
  * The result is a small integer: 0 = safe, higher = more possible waits fed.
  *
- * Limitations (v1, documented): no betaori/fold modelling, no kanchan-suji
- * (nakasuji) pruning, no turn-order weighting beyond the threat multiplier.
+ * This module powers the hard bot's pressure model (see ai/bot.ts): the
+ * per-tile risk feeds a three-mode decision — betaori (full fold vs riichi
+ * when far from tenpai), pressur (push when tenpai/close with no riichi) and
+ * a balanced mode in between.
+ *
+ * Limitations (documented): no kanchan-suji (nakasuji) pruning, no turn-order
+ * weighting beyond the threat multiplier, no deal-in probability estimates.
  */
 
 export interface OppInfo {

@@ -21,15 +21,25 @@ import { totalRisk, threatLevel, type OppInfo } from './defense';
  *            minimises shanten (ties broken by acceptance count); claims
  *            only calls that lower shanten or complete the hand.
  *            Limitation: no defensive play, ignores scoring potential.
- *  - hard  : medium's offence plus REAL defence and value awareness —
- *            per-opponent wait counting (genbutsu/suji/kabe, see ai/defense.ts):
- *            when an opponent is threatening (riichi / 2+ melds) the discard
- *            pool widens to best-shanten+1 and the safest tile wins; avoids
- *            chi unless it clearly advances the hand; keeps concealed hands
- *            for the +1 fan when close to ready; declares riichi when the
- *            ruleset allows it and the hand is concealed & tenpai.
- *            Limitation: no full betaori fold-or-push EV modelling, no
- *            nakasuji pruning, no opponent-wait enumeration beyond suji/kabe.
+ *  - hard  : medium's offence plus REAL defence and a pressure model —
+ *            per-opponent wait counting (genbutsu/suji/kabe, see ai/defense.ts)
+ *            with three modes:
+ *              BETAORI  — an opponent declared riichi and we are >= 2 shanten:
+ *                         shanten is ignored, every tile ranked by safety
+ *                         (genbutsu > visible > low-wait terminals);
+ *              PRESSUR  — we are tenpai (vs anyone) or 1-shanten with no
+ *                         riichi on the table: full-speed attack, risk weight
+ *                         drops to ~0;
+ *              BALANCED — otherwise: under threat (riichi / 2+ melds) the
+ *                         discard pool widens to best-shanten+1 and safety is
+ *                         weighted strongly.
+ *            Also avoids chi unless it clearly advances the hand; keeps
+ *            concealed hands for the +1 fan when close to ready; declares
+ *            riichi when the ruleset allows it and the hand is concealed &
+ *            tenpai.
+ *            Limitation: pressur is threshold-based (no deal-in% x value EV
+ *            computation), no nakasuji pruning, no wait enumeration beyond
+ *            suji/kabe.
  */
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -102,10 +112,21 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
 
   // medium & hard: minimise shanten; hard adds real per-opponent defence
   const base = normalShanten(handCounts(view), view.melds.length);
-  const maxThreat = view.opponents && view.opponents.length > 0
-    ? Math.max(...view.opponents.map(threatLevel))
-    : 0;
-  const defensive = difficulty === 'hard' && maxThreat >= 2;
+  const opps = view.opponents ?? [];
+  const maxThreat = opps.length > 0 ? Math.max(...opps.map(threatLevel)) : 0;
+  const riichiOpps = opps.filter((o) => o.riichi);
+
+  // HARD pressure model (documented):
+  //  - BETAORI (full fold): an opponent declared riichi AND our hand is far
+  //    from ready (shanten >= 2) -> shanten is IGNORED; every tile is ranked
+  //    purely by safety (genbutsu > visible > low-wait terminals).
+  //  - PRESSUR (push): we are tenpai (against anyone) or 1-shanten with no
+  //    riichi on the table -> attack at full speed, risk almost ignored.
+  //  - otherwise: balanced mode — widen the pool by 1 shanten under threat
+  //    and weight safety strongly.
+  const fold = difficulty === 'hard' && riichiOpps.length > 0 && base >= 2;
+  const push = difficulty === 'hard' && base <= 1 && riichiOpps.length === 0;
+  const defensive = difficulty === 'hard' && maxThreat >= 2 && !push;
 
   let best = Infinity;
   const bySh: { sh: number; idx: number }[] = [];
@@ -114,10 +135,25 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
     bySh.push({ sh, idx: i });
     if (sh < best) best = sh;
   }
+
+  const used = usedCounts(view);
+
+  if (fold) {
+    // betaori: pure safety ranking over the WHOLE hand (no shanten filter)
+    const scored = view.hand.map((f, idx) => {
+      const fi = faceIndex(f);
+      const risk = opps.length > 0 ? totalRisk(fi, opps, used) : 0;
+      let s = -risk * 100 + (used[fi] ?? 0) * 10; // genbutsu/visible first
+      if (isTerminalOrHonor(f)) s += 5; // fewer two-sided waits feed on these
+      return { idx, s };
+    });
+    scored.sort((a, b) => b.s - a.s);
+    return scored[0].idx;
+  }
+
   // defensive mode may sacrifice at most 1 shanten to fold toward safety
   const pool = bySh.filter((e) => e.sh <= best + (defensive ? 1 : 0));
 
-  const used = usedCounts(view);
   const scored = pool.map(({ idx }) => {
     const fi = faceIndex(view.hand[idx]);
     const remaining = view.hand.filter((_, k) => k !== idx);
@@ -130,9 +166,9 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
       const late = view.wallCount < 40;
       if (late && isTerminalOrHonor(view.hand[idx]) && visible === 0) score -= 6;
       if (view.hand[idx].suit === 'dragon') score -= 3;
-      if (view.opponents) {
-        const risk = totalRisk(fi, view.opponents, used);
-        score -= risk * (defensive ? 40 : 4); // defence: real wait counting
+      if (opps.length > 0) {
+        const risk = totalRisk(fi, opps, used);
+        score -= risk * (push ? 1 : defensive ? 40 : 4); // pressur ~ ignores risk
       }
     }
     return { idx, score };
