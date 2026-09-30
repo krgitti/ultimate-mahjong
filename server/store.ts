@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import pg from 'pg';
 import type { ReplayAction } from '../src/game-engine/traditional/engine';
 
 /**
@@ -121,13 +122,10 @@ export class MemoryStore implements RoomStore {
 /* ------------------------------------------------------------------ */
 
 export class PostgresStore implements RoomStore {
-  private pool: import('pg').Pool;
+  private pool: pg.Pool;
 
   constructor(databaseUrl: string) {
-    // lazy require so `pg` is only needed when a database is configured
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { Pool } = require('pg') as typeof import('pg');
-    this.pool = new Pool({ connectionString: databaseUrl, max: 4 });
+    this.pool = new pg.Pool({ connectionString: databaseUrl, max: 4 });
   }
 
   async init(): Promise<void> {
