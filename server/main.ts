@@ -323,6 +323,7 @@ export function startServer(opts: ServerOptions) {
         .flatMap((p) => p.melds.filter((m) => m.kind !== 'ankan').flatMap((m) => m.tiles.map((t) => s.tiles[t].face))),
       wallCount: s.wall.length,
       turnNumber: room.rngTick,
+      rulesetId: room.rulesConfig,
       opponents: s.players
         .filter((p) => p.seat !== seat)
         .map((p) => ({

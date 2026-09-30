@@ -4,6 +4,7 @@ import { countsFromFaces, normalShanten, acceptanceCount, type Counts } from '..
 import type { MeldKind } from '../traditional/engine';
 import type { Rng } from '../tiles/rng';
 import { totalRisk, threatLevel, type OppInfo } from './defense';
+import { knittedShanten } from './knitted';
 
 /**
  * Bots for the traditional mode.
@@ -57,6 +58,8 @@ export interface BotView {
   turnNumber: number;
   /** per-opponent public info for defence (optional; hard difficulty uses it) */
   opponents?: OppInfo[];
+  /** regras da mesa (info pública) — o bot hard em MCR persegue mãos irregulares */
+  rulesetId?: string;
 }
 
 export interface BotCallOptions {
@@ -128,6 +131,31 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
   const push = difficulty === 'hard' && base <= 1 && riichiOpps.length === 0;
   const defensive = difficulty === 'hard' && maxThreat >= 2 && !push;
 
+  // MCR hard (item 6.4): perseguir mãos irregulares. Se o shanten tricotado
+  // (全不靠/七星不靠/組合龍) está na frente do normal — ou já está a 1 do
+  // tenpai — descarta-se para minimizá-lo. Só informação pública + própria
+  // mão; betaori (fold) ainda tem prioridade defensiva.
+  if (difficulty === 'hard' && view.rulesetId === 'mcr' && view.melds.length === 0 && !fold) {
+    const kn0 = knittedShanten(handCounts(view));
+    if (kn0 < base || kn0 <= 1) {
+      const knAfter: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const c = handCounts(view);
+        const fi = faceIndex(view.hand[i]);
+        c[fi] = Math.max(0, (c[fi] ?? 0) - 1);
+        knAfter.push(knittedShanten(c));
+      }
+      const bestKn = Math.min(...knAfter);
+      const usedK = usedCounts(view);
+      const options = knAfter.map((sh, idx) => ({ idx, sh })).filter((e) => e.sh === bestKn);
+      // desempate: a peça mais "visível" (levemente mais segura)
+      options.sort(
+        (a, b) => (usedK[faceIndex(view.hand[b.idx])] ?? 0) - (usedK[faceIndex(view.hand[a.idx])] ?? 0)
+      );
+      return options[0].idx;
+    }
+  }
+
   let best = Infinity;
   const bySh: { sh: number; idx: number }[] = [];
   for (let i = 0; i < n; i++) {
@@ -185,6 +213,13 @@ export function chooseCall(
   rng: Rng
 ): { call: BotCall; chiChoice?: number } {
   if (opts.canRon) return { call: 'ron' };
+
+  // MCR hard perseguindo mão irregular: chamadas quebrariam a mão fechada
+  if (difficulty === 'hard' && view.rulesetId === 'mcr' && view.melds.length === 0) {
+    const c = handCounts(view);
+    const kn = knittedShanten(c);
+    if (kn < normalShanten(c, 0) || kn <= 1) return { call: 'pass' };
+  }
 
   const curShanten = normalShanten(handCounts(view), view.melds.length);
 

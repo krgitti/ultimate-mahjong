@@ -98,6 +98,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
         ),
       wallCount: st.wall.length,
       turnNumber: turnCountRef.current,
+      rulesetId: st.ruleset.id,
       // per-opponent PUBLIC info only (ponds, open melds, riichi flag)
       opponents: st.players
         .filter((p) => p.seat !== seat)

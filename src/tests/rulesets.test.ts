@@ -28,6 +28,10 @@ import {
   faceIdxOf,
 } from '../game-engine/traditional/engine';
 import { dangerScore, totalRisk, threatLevel, type OppInfo } from '../game-engine/ai/defense';
+import { chooseDiscard, chooseCall, type BotView } from '../game-engine/ai/bot';
+import { knittedHonorsShanten, knittedStraightShanten } from '../game-engine/ai/knitted';
+import { createRng } from '../game-engine/tiles/rng';
+import type { TileFace } from '../game-engine/tiles/tiles';
 import { chooseDiscard, type BotView } from '../game-engine/ai/bot';
 import { createRng } from '../game-engine/tiles/rng';
 import { faceIndex, indexToFace, type TileFace } from '../game-engine/tiles/tiles';
@@ -659,5 +663,180 @@ describe('item 5 — deterministic replay from seed + action log', () => {
         result: st.result,
       });
     expect(snap(r)).toBe(snap(s));
+  });
+});
+
+describe('item 6d — shanten tricotado e bot MCR perseguindo mãos irregulares', () => {
+  const F = (suit: TileFace['suit'], rank: number): TileFace => ({ suit, rank });
+  const man = (r: number) => F('man', r);
+  const pin = (r: number) => F('pin', r);
+  const sou = (r: number) => F('sou', r);
+  const wind = (r: number) => F('wind', r);
+  const dragon = (r: number) => F('dragon', r);
+  const cnt = (faces: TileFace[]) => countsFromFaces(faces);
+
+  it('knittedHonorsShanten: completa -1, tenpai 0, lixo conta como troca', () => {
+    const complete = cnt([
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3), pin(6), pin(9),
+      wind(1), wind(2), wind(3), wind(4), dragon(1),
+    ]);
+    expect(knittedHonorsShanten(complete)).toBe(-1);
+
+    // 13 úteis → tenpai
+    const tenpai = cnt([
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3), pin(6),
+      wind(1), wind(2), wind(3), wind(4), dragon(1),
+    ]);
+    expect(knittedHonorsShanten(tenpai)).toBe(0);
+
+    // duplicatas não ajudam (cada face conta 1): com 1 duplicata ainda dá
+    // para trocar (tenpai); com 2 duplicatas sobram 2 trocas → shanten 1
+    const dup1 = cnt([
+      man(1), man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3), pin(6), pin(9),
+      wind(1), wind(2), wind(3), dragon(1),
+    ]);
+    expect(knittedHonorsShanten(dup1)).toBe(0); // 13 úteis em 14
+    const dup2 = cnt([
+      man(1), man(1), man(4), man(7),
+      sou(2), sou(2), sou(5), sou(8),
+      pin(3), pin(6), pin(9),
+      wind(1), wind(2), wind(3),
+    ]);
+    expect(knittedHonorsShanten(dup2)).toBe(1); // 12 úteis em 14
+
+    // mão normal fica longe
+    const normal = cnt([
+      man(1), man(2), man(3), man(4), man(5), man(6),
+      sou(2), sou(3), sou(4),
+      pin(7), pin(8),
+      wind(1), wind(1),
+    ]);
+    expect(knittedHonorsShanten(normal)).toBeGreaterThanOrEqual(5);
+  });
+
+  it('knittedStraightShanten: 組合龍 completa -1, a 1 peça 0, com melds impossível', () => {
+    const complete = cnt([
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3), pin(6), pin(9),
+      man(5), man(5), man(5),
+      pin(8), pin(8),
+    ]);
+    expect(knittedStraightShanten(complete)).toBe(-1);
+
+    const oneAway = cnt([
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3), pin(6), pin(9),
+      man(5), man(5), man(5),
+      pin(8),
+    ]);
+    expect(knittedStraightShanten(oneAway)).toBe(0);
+    expect(knittedStraightShanten(complete, 1)).toBe(99); // exige mão fechada
+  });
+
+  it('bot hard MCR descarta o lixo preservando a mão tricotada', () => {
+    // 12 úteis + lixo 5m e 8p (14 peças): descartar lixo mantém shanten 1;
+    // descartar peça útil piora para 2.
+    const hand = [
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3),
+      wind(1), wind(2), wind(3), wind(4), dragon(1),
+      man(5), pin(8),
+    ];
+    const view: BotView = {
+      seat: 0,
+      seatWind: 1,
+      roundWind: 1,
+      hand,
+      melds: [],
+      bonusFaces: [],
+      visibleDiscards: [],
+      otherMeldFaces: [],
+      wallCount: 60,
+      turnNumber: 1,
+      rulesetId: 'mcr',
+    };
+    const before = knittedHonorsShanten(cnt(hand));
+    expect(before).toBe(1);
+    const i = chooseDiscard(view, 'hard', createRng(42));
+    const discarded = hand[i];
+    const after = hand.filter((_, k) => k !== i);
+    expect(knittedHonorsShanten(cnt(after))).toBe(1); // não piorou
+    // descartou exatamente uma das peças inúteis
+    const isJunk =
+      (discarded.suit === 'man' && discarded.rank === 5) || (discarded.suit === 'pin' && discarded.rank === 8);
+    expect(isJunk).toBe(true);
+  });
+
+  it('bot hard MCR perseguindo irregular recusa chamadas (mão fechada)', () => {
+    const hand = [
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3),
+      wind(1), wind(2), wind(3), wind(4), dragon(1),
+      pin(8), pin(8),
+    ];
+    const view: BotView = {
+      seat: 0,
+      seatWind: 1,
+      roundWind: 1,
+      hand,
+      melds: [],
+      bonusFaces: [],
+      visibleDiscards: [],
+      otherMeldFaces: [],
+      wallCount: 60,
+      turnNumber: 1,
+      rulesetId: 'mcr',
+    };
+    const call = chooseCall(
+      view,
+      { discardFace: pin(8), discardSeat: 1, canPon: true, canRon: false, canKan: false, chiOptions: null },
+      'hard',
+      createRng(7)
+    );
+    expect(call.call).toBe('pass');
+    // ron continua valendo
+    const ron = chooseCall(
+      view,
+      { discardFace: pin(8), discardSeat: 1, canPon: true, canRon: true, canKan: false, chiOptions: null },
+      'hard',
+      createRng(7)
+    );
+    expect(ron.call).toBe('ron');
+  });
+
+  it('sem rulesetId (HK offline) o bot não muda de comportamento', () => {
+    const hand = [
+      man(1), man(4), man(7),
+      sou(2), sou(5), sou(8),
+      pin(3),
+      wind(1), wind(2), wind(3), wind(4), dragon(1),
+      man(5), pin(8),
+    ];
+    const view: BotView = {
+      seat: 0,
+      seatWind: 1,
+      roundWind: 1,
+      hand,
+      melds: [],
+      bonusFaces: [],
+      visibleDiscards: [],
+      otherMeldFaces: [],
+      wallCount: 60,
+      turnNumber: 1,
+    };
+    // apenas garante que executa e devolve índice válido (comportamento antigo)
+    const i = chooseDiscard(view, 'hard', createRng(42));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(i).toBeLessThan(hand.length);
   });
 });
