@@ -13,6 +13,10 @@ import { mcrRuleset } from '../game-engine/rules/mcr';
 import { HK_DEFAULTS } from '../game-engine/rules/hongkong';
 import {
   newMatch,
+  replayMatch,
+  serializeReplay,
+  resolveCalls,
+  resolveRob,
   canRiichi,
   declareRiichi,
   discard,
@@ -587,5 +591,49 @@ describe('item 3 — betaori & pressur (hard bot pressure model)', () => {
     expect(faceIndex(hand[idx])).toBe(faceIndex(man(1))); // safe tenpai-keeping discard
     const rest = hand.filter((_, k) => k !== idx);
     expect(shanten(countsFromFaces(rest), 0)).toBe(0);
+  });
+});
+
+describe('item 5 — deterministic replay from seed + action log', () => {
+  it('replays a full hand identically (hands, ponds, scores, wall)', () => {
+    const SEED = 987654;
+    const s = newMatch(hkRuleset({ ...HK_DEFAULTS, handsPerMatch: 1 }), SEED);
+    let guard = 0;
+    while (s.phase !== 'match-over' && guard++ < 2000) {
+      if (s.phase === 'hand-over') { nextHandOrEnd(s); continue; }
+      if (s.phase === 'draw') { drawTile(s); continue; }
+      if (s.phase === 'calls') {
+        resolveCalls(s, (_seat, offers) => {
+          const ron = offers.find((o) => o.kind === 'ron');
+          return ron ? { offer: ron } : { offer: null };
+        });
+        continue;
+      }
+      if (s.phase === 'calls-rob') { resolveRob(s, () => false); continue; }
+      if (s.phase === 'discard') {
+        if (canTsumo(s, s.current)) { declareTsumo(s, s.current); continue; }
+        const legals = legalDiscards(s, s.current);
+        discard(s, legals[0]);
+      }
+    }
+    const record = serializeReplay(s);
+    expect(record.seed).toBe(SEED);
+    expect(record.actions.length).toBeGreaterThan(50);
+    const r = replayMatch(hkRuleset({ ...HK_DEFAULTS, handsPerMatch: 1 }), record);
+    const snap = (st: typeof s) =>
+      JSON.stringify({
+        phase: st.phase,
+        current: st.current,
+        handNumber: st.handNumber,
+        roundWind: st.roundWind,
+        scores: st.players.map((p) => p.score),
+        hands: st.players.map((p) => p.hand),
+        melds: st.players.map((p) => p.melds.map((m) => [m.kind, ...m.tiles])),
+        ponds: st.players.map((p) => p.discards),
+        wall: st.wall,
+        deadWall: st.deadWall,
+        result: st.result,
+      });
+    expect(snap(r)).toBe(snap(s));
   });
 });

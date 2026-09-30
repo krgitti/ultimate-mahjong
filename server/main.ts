@@ -59,6 +59,7 @@ interface Room {
   seats: (Session | null)[];
   started: boolean;
   hostSeat: number;
+  spectators: { ws: WebSocket; name: string }[];
   pendingCall: Map<number, CallDecision | 'pending'>;
   pendingRob: Map<number, boolean>;
   callWaitingSince: number;
@@ -115,6 +116,22 @@ export function startServer(opts: ServerOptions) {
             started: room.started,
             seats: room.seats.map((s2, i) => (s2 ? { seat: i, name: s2.name, connected: s2.connected, human: true } : null)),
             canStart: seat === room.hostSeat,
+            spectators: room.spectators.length,
+          },
+        });
+      }
+      for (const spec of room.spectators) {
+        send(spec.ws, {
+          t: 'snapshot',
+          seat: -1,
+          spectator: true,
+          view: publicView(s, -1),
+          meta: {
+            code: room.code,
+            started: room.started,
+            seats: room.seats.map((s2, i) => (s2 ? { seat: i, name: s2.name, connected: s2.connected, human: true } : null)),
+            canStart: false,
+            spectators: room.spectators.length,
           },
         });
       }
@@ -273,6 +290,7 @@ export function startServer(opts: ServerOptions) {
   wss.on('connection', (ws) => {
     let myRoom: Room | null = null;
     let mySeat = -1;
+    let spectating = false;
 
     ws.on('message', (raw) => {
       let msg: Record<string, unknown>;
@@ -299,6 +317,7 @@ export function startServer(opts: ServerOptions) {
           code,
           state,
           seats: [null, null, null, null],
+          spectators: [],
           started: false,
           hostSeat: 0,
           pendingCall: new Map(),
@@ -315,6 +334,22 @@ export function startServer(opts: ServerOptions) {
         myRoom = room;
         mySeat = 0;
         send(ws, { t: 'joined', code, token: sess.token, seat: 0 });
+        broadcast(room);
+        return;
+      }
+
+      if (t === 'spectate') {
+        // spectators: read-only seats (seat -1). They receive the same public
+        // snapshots as players, minus any private hand, and cannot act.
+        const room = rooms.get(String(msg.code || '').toUpperCase());
+        if (!room) {
+          send(ws, { t: 'error', error: 'Sala não encontrada.' });
+          return;
+        }
+        room.spectators.push({ ws, name: String(msg.name || 'Espectador') });
+        myRoom = room;
+        spectating = true;
+        send(ws, { t: 'joined', code: room.code, seat: -1, spectator: true, token: null });
         broadcast(room);
         return;
       }
@@ -356,7 +391,11 @@ export function startServer(opts: ServerOptions) {
         return;
       }
 
-      if (!myRoom || mySeat < 0) return;
+      if (!myRoom) return;
+      if (spectating || mySeat < 0) {
+        if (t === 'action' || t === 'start') send(ws, { t: 'error', error: 'Espectadores não podem jogar.' });
+        return;
+      }
       const room = myRoom;
       const s = room.state;
 
@@ -408,6 +447,11 @@ export function startServer(opts: ServerOptions) {
     });
 
     ws.on('close', () => {
+      if (myRoom && spectating) {
+        myRoom.spectators = myRoom.spectators.filter((sp) => sp.ws !== ws);
+        broadcast(myRoom);
+        return;
+      }
       if (myRoom && mySeat >= 0) {
         const sess = myRoom.seats[mySeat];
         if (sess) {

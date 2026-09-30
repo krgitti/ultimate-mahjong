@@ -19,10 +19,11 @@ interface Snap {
     offers: { seat: number; kind: string }[];
   };
   myActions?: { legal: number[] };
-  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[] };
+  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number };
   code?: string;
   token?: string;
   reconnected?: boolean;
+  spectator?: boolean;
   error?: string;
 }
 
@@ -102,6 +103,45 @@ function autoPlay(c: TestClient, seat: number) {
     }
   });
 }
+
+describe('item 5 — spectators (read-only seats)', () => {
+  it('a spectator receives public snapshots, leaks no hands, and cannot act', async () => {
+    const server = startServer({ port: PORT });
+    const A = client();
+    autoPass(A, 0);
+    autoPlay(A, 0);
+    A.ws.on('open', () => A.ws.send(JSON.stringify({ t: 'create', name: 'Ana' })));
+    const j = await A.next((m) => m.t === 'joined', 30000, 'A joined');
+    const code = j.code!;
+    A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+    await A.next((m) => m.t === 'snapshot' && m.meta!.started, 30000, 'started');
+
+    const S = client();
+    S.ws.on('open', () => S.ws.send(JSON.stringify({ t: 'spectate', code, name: 'Spy' })));
+    const sj = await S.next((m) => m.t === 'joined', 30000, 'spec joined');
+    expect(sj.seat).toBe(-1);
+    expect(sj.spectator).toBe(true);
+
+    const snap = await S.next((m) => m.t === 'snapshot', 30000, 'spec snapshot');
+    expect(snap.seat).toBe(-1);
+    const json = JSON.stringify(snap.view);
+    expect(json).not.toContain('"myHand"'); // no private hand for spectators
+    expect(snap.myActions).toBeUndefined();
+
+    // spectators cannot act
+    S.ws.send(JSON.stringify({ t: 'action', action: { kind: 'discard', tileId: 0 } }));
+    const err = await S.next((m) => m.t === 'error', 30000, 'spec blocked');
+    expect(err.error).toBeTruthy();
+
+    // players see the spectator count in meta
+    const withCount = await A.next((m) => m.t === 'snapshot' && m.meta!.spectators === 1, 30000, 'spectator count');
+    expect(withCount.meta!.spectators).toBe(1);
+
+    A.ws.close();
+    S.ws.close();
+    server.close();
+  }, 60000);
+});
 
 describe('item 4 — authoritative server + reconnection', () => {
   it('two real clients play a hand; hidden hands never leak; reconnect restores the seat', async () => {

@@ -85,6 +85,27 @@ export interface TradState {
   /** riichi: dora indicator tiles (grows with each kan); ura revealed on riichi win */
   doraIndicators: number[];
   uraIndicators: number[];
+  /** deterministic replay: every external input is recorded (see replayMatch) */
+  recording: boolean;
+  replay: { seed: number; actions: ReplayAction[] };
+}
+
+/** Every EXTERNAL input that mutates the match. Internal randomness comes
+ *  from the seeded rng (mulberry32, serializable), so seed + actions fully
+ *  reproduce a match — see replayMatch(). */
+export type ReplayAction =
+  | { t: 'draw' }
+  | { t: 'discard'; tileId: number }
+  | { t: 'riichi'; seat: number }
+  | { t: 'tsumo'; seat: number }
+  | { t: 'ankan'; seat: number }
+  | { t: 'addedkong'; seat: number }
+  | { t: 'decision'; seat: number; kind: 'pass' | 'chi' | 'pon' | 'kan' | 'ron'; chiChoice?: number[] }
+  | { t: 'rob'; seat: number; yes: boolean }
+  | { t: 'next-hand' };
+
+function rec(s: TradState, a: ReplayAction): void {
+  if (s.recording) s.replay.actions.push(a);
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,6 +194,8 @@ export function newMatch(
     robTarget: null,
     doraIndicators: [],
     uraIndicators: [],
+    recording: true,
+    replay: { seed, actions: [] },
   };
   startHand(s);
   return s;
@@ -257,6 +280,7 @@ export interface DrawResult {
 
 export function drawTile(s: TradState): DrawResult {
   if (s.phase !== 'draw') return { ok: false };
+  rec(s, { t: 'draw' }); // recorded as an ATTEMPT: an exhaustive draw also ends the hand
   const replacement = s.pendingReplacementDraw;
   if (!replacement && s.wall.length === 0) {
     // exhaustive draw
@@ -315,6 +339,7 @@ export function discard(s: TradState, tileId: number): boolean {
   if (s.phase !== 'discard' || s.current < 0) return false;
   const p = s.players[s.current];
   if (!legalDiscards(s, s.current).includes(tileId)) return false;
+  rec(s, { t: 'discard', tileId });
   const idx = p.hand.indexOf(tileId);
   if (idx === -1) return false;
   if (p.riichi && !p.riichiLock) p.riichiLock = true; // lock tsumogiri from next turn
@@ -392,6 +417,7 @@ export function declareRiichi(s: TradState, seat: number): boolean {
   s.players[seat].riichi = true;
   s.players[seat].ippatsu = true;
   log(s, 'riichi', seat, undefined, `${s.players[seat].name} declara RIICHI`);
+  rec(s, { t: 'riichi', seat });
   return true;
 }
 
@@ -500,6 +526,7 @@ export function resolveCalls(
     const offers = bySeat.get(seat)!.filter((o) => kindPriority(o.kind) >= 0);
     const decision = decide(seat, offers);
     if (decision === 'pending') return 'pending';
+    rec(s, { t: 'decision', seat, kind: decision.offer ? decision.offer.kind : 'pass', chiChoice: decision.chiChoice });
     if (decision.offer === null) {
       passed.add(seat);
       continue;
@@ -588,6 +615,7 @@ export function declareAnkan(s: TradState, seat: number): boolean {
   addKanDora(s);
   s.phase = 'draw';
   log(s, 'call', seat, taken[0], `${p.name} faz KONG fechado`);
+  rec(s, { t: 'ankan', seat });
   return true;
 }
 
@@ -600,6 +628,7 @@ export function declareAddedKong(s: TradState, seat: number): boolean {
   if (!meld) return false;
   const fIdx = faceIdxOf(s, meld.tiles[0]);
   const tileId = p.hand.find((id) => faceIdxOf(s, id) === fIdx)!;
+  rec(s, { t: 'addedkong', seat });
   // check if anyone can rob
   const robbers: number[] = [];
   for (let i = 1; i <= 3; i++) {
@@ -655,6 +684,7 @@ export function resolveRob(
   for (const seat of robSeats) {
     const d = decide(seat);
     if (d === 'pending') return 'pending';
+    rec(s, { t: 'rob', seat, yes: d });
     if (d) {
       const tileId = s.robTarget!.tileId;
       const kongSeat = s.robTarget!.seat;
@@ -728,6 +758,7 @@ export function scoreCandidate(
 
 export function declareTsumo(s: TradState, seat: number): boolean {
   if (!canTsumo(s, seat)) return false;
+  rec(s, { t: 'tsumo', seat });
   const tileId = s.drawnTile!;
   finishHandWithWin(s, seat, tileId, true, false, s.wall.length === 0);
   return true;
@@ -764,6 +795,7 @@ function finishHandWithWin(
 }
 
 export function nextHandOrEnd(s: TradState): void {
+  rec(s, { t: 'next-hand' });
   if (s.phase !== 'hand-over') return;
   if (s.handNumber >= s.ruleset.handsPerMatch) {
     s.phase = 'match-over';
@@ -842,10 +874,10 @@ export function publicView(s: TradState, viewerSeat: number): PublicState {
     offers: s.offers,
     result: s.result,
     events: s.events,
-    myHand: {
+    myHand: viewerSeat >= 0 ? {
       seat: viewerSeat,
       tiles: s.players[viewerSeat].hand.map((id) => ({ id, face: faceOf(s, id) })),
-    },
+    } : undefined,
     drawnTile: s.drawnTile,
   };
 }
@@ -859,3 +891,71 @@ export function myWaits(s: TradState, seat: number): number[] {
 }
 
 export { BASIC_FACES };
+
+
+/* ------------------------------------------------------------------ */
+/* Deterministic replay                                                */
+/* ------------------------------------------------------------------ */
+
+/** Serializable replay record: seed + every external input. */
+export interface ReplayRecord {
+  rulesetId: string;
+  seed: number;
+  actions: ReplayAction[];
+}
+
+export function serializeReplay(s: TradState): ReplayRecord {
+  return { rulesetId: s.ruleset.id, seed: s.replay.seed, actions: s.replay.actions };
+}
+
+/**
+ * Re-applies a recorded match from its seed. The rng (mulberry32) is fully
+ * determined by the seed, and every external input (draws, discards, calls,
+ * decisions, wins) is in the action log — so the resulting state is
+ * bit-identical to the original at the same point of the match.
+ */
+export function replayMatch(ruleset: Ruleset, record: { seed: number; actions: ReplayAction[] }): TradState {
+  const s = newMatch(ruleset, record.seed);
+  s.recording = false; // do not re-record while replaying
+  const actions = record.actions;
+  let i = 0;
+  let guard = 0;
+  const limit = actions.length * 4 + 1000;
+  while (guard++ < limit) {
+    if (s.phase === 'calls') {
+      const res = resolveCalls(s, (seat) => {
+        const a = actions[i];
+        if (!a || a.t !== 'decision' || a.seat !== seat) return 'pending';
+        i++;
+        if (a.kind === 'pass') return { offer: null };
+        const offer = s.offers.find((o) => o.seat === seat && o.kind === a.kind);
+        return offer ? { offer, chiChoice: a.chiChoice } : { offer: null };
+      });
+      if (res === 'pending') break;
+      continue;
+    }
+    if (s.phase === 'calls-rob') {
+      const res = resolveRob(s, (seat) => {
+        const a = actions[i];
+        if (!a || a.t !== 'rob' || a.seat !== seat) return 'pending';
+        i++;
+        return a.yes;
+      });
+      if (res === 'pending') break;
+      continue;
+    }
+    if (i >= actions.length) break;
+    const a = actions[i++];
+    switch (a.t) {
+      case 'draw': drawTile(s); break;
+      case 'discard': discard(s, a.tileId); break;
+      case 'riichi': declareRiichi(s, a.seat); break;
+      case 'tsumo': declareTsumo(s, a.seat); break;
+      case 'ankan': declareAnkan(s, a.seat); break;
+      case 'addedkong': declareAddedKong(s, a.seat); break;
+      case 'next-hand': nextHandOrEnd(s); break;
+      default: break; // decisions are consumed inside the resolve phases
+    }
+  }
+  return s;
+}

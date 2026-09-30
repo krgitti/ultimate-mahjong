@@ -128,6 +128,7 @@ export function OnlineScreen() {
             maxLength={4}
           />
           <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador' })}>Entrar na sala</button>
+          <button className="btn" onClick={() => connect({ t: 'spectate', code: joinCode, name: name || 'Espectador' })}>👁 Assistir</button>
         </div>
         {error && <p style={{ color: '#ffd9d7', marginTop: 10 }}>{error}</p>}
         <p className="muted small" style={{ marginTop: 14 }}>
@@ -219,6 +220,7 @@ export function OnlineScreen() {
             </div>
           )}
         </div>
+        {mySeat >= 0 ? (
         <div className="my-area">
           <div className="seat-panel active-seat">
             <div className="seat-name">{v.players[mySeat]?.name} (você)</div>
@@ -269,6 +271,14 @@ export function OnlineScreen() {
             )}
           </div>
         </div>
+        ) : (
+        <div className="my-area">
+          <div className="seat-panel active-seat">
+            <div className="seat-name">👁 Modo espectador — sala {meta?.code}</div>
+            <div className="row small"><span>Apenas assistindo — as mãos dos jogadores não são exibidas.</span></div>
+          </div>
+        </div>
+        )}
       </div>
 
       {v.result && (
