@@ -36,6 +36,15 @@ function Mini({ face }: { face?: TileFace }) {
 }
 
 const WIND_PT = ['', 'Leste', 'Sul', 'Oeste', 'Norte'];
+/** mesmo conjunto fixo do servidor (server/main.ts) */
+const EMOTES = ['😀', '😂', '😮', '😢', '👍', '🙏', '🀄', '🎉'];
+
+interface ChatMsg {
+  seat: number;
+  name: string;
+  text?: string;
+  emote?: string;
+}
 
 export function OnlineScreen() {
   const [phase, setPhase] = useState<'form' | 'lobby' | 'table'>('form');
@@ -49,6 +58,9 @@ export function OnlineScreen() {
   const [rulesSel, setRulesSel] = useState<'classic' | 'chicken' | 'riichi' | 'mcr'>('classic');
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
   const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number } | null>(null);
+  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [chatText, setChatText] = useState('');
+  const [chatOpen, setChatOpen] = useState(true);
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -92,6 +104,10 @@ export function OnlineScreen() {
         setLeader((msg.rows ?? []) as typeof leader);
         return;
       }
+      if (msg.t === 'chat' || msg.t === 'emote') {
+        setChat((c) => [...c.slice(-59), { seat: msg.seat, name: String(msg.name ?? ''), text: msg.text, emote: msg.emote }]);
+        return;
+      }
       if (msg.t === 'joined') {
         setQueueInfo(null);
         setCode(msg.code);
@@ -125,6 +141,57 @@ export function OnlineScreen() {
   const send = (o: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify(o));
   };
+
+  const sendChat = () => {
+    const text = chatText.trim();
+    if (!text) return;
+    send({ t: 'chat', text });
+    setChatText('');
+  };
+
+  const chatPanel = (
+    <div className="panel" style={{ marginTop: 10 }}>
+      <div className="row-between" style={{ marginBottom: 6 }}>
+        <h3 className="panel-title" style={{ margin: 0 }}>💬 Chat da mesa</h3>
+        <button className="btn btn-sm" onClick={() => setChatOpen((o) => !o)}>{chatOpen ? '—' : '+'}</button>
+      </div>
+      {chatOpen && (
+        <>
+          <div className="event-log" aria-live="polite" style={{ maxHeight: 140, marginBottom: 6 }}>
+            {chat.length === 0 && <div className="muted small">Sem mensagens ainda.</div>}
+            {chat.map((m, i) => (
+              <div key={i} className="small">
+                {m.emote ? (
+                  <><b>{m.name}</b> {m.emote}</>
+                ) : (
+                  <><b>{m.name}</b>: {m.text}</>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ marginBottom: 6 }}>
+            {EMOTES.map((e, i) => (
+              <button key={i} className="btn btn-sm" title={`Emote ${e}`} onClick={() => send({ t: 'emote', id: i })}>
+                {e}
+              </button>
+            ))}
+          </div>
+          <div className="row">
+            <input
+              value={chatText}
+              onChange={(e) => setChatText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+              placeholder="Mensagem (máx. 140)"
+              maxLength={140}
+              style={{ flex: 1 }}
+              aria-label="Mensagem do chat"
+            />
+            <button className="btn btn-sm" onClick={sendChat}>Enviar</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const doDiscard = (id: number) => {
     if (!actions.legal.includes(id)) return;
@@ -280,6 +347,7 @@ export function OnlineScreen() {
             </button>
           </div>
         )}
+        {chatPanel}
         {error && <p style={{ color: '#ffd9d7' }}>{error}</p>}
       </div>
     );
@@ -420,6 +488,8 @@ export function OnlineScreen() {
           <p className="muted small">Próxima mão em instantes…</p>
         </div>
       )}
+
+      {chatPanel}
 
       <div className="panel" style={{ marginTop: '0.7rem' }}>
         <h3 className="panel-title">Histórico</h3>

@@ -483,10 +483,16 @@ export function startServer(opts: ServerOptions) {
   }
   const ticker = setInterval(tickAll, 400);
 
+  // chat de mesa (item 6.2): canal leve no WS — não toca no estado
+  // autoritativo da sala; rate-limited por conexão; emotes são um
+  // conjunto fixo do servidor (o cliente manda só o índice).
+  const EMOTES = ['😀', '😂', '😮', '😢', '👍', '🙏', '🀄', '🎉'];
+
   wss.on('connection', (ws) => {
     let myRoom: Room | null = null;
     let mySeat = -1;
     let spectating = false;
+    let lastChatAt = 0;
     connBind.set(ws, (room, seat) => {
       myRoom = room;
       mySeat = seat;
@@ -579,6 +585,30 @@ export function startServer(opts: ServerOptions) {
         } else {
           queueStatus(key);
         }
+        return;
+      }
+
+      if (t === 'chat' || t === 'emote') {
+        const room = myRoom;
+        if (!room) return;
+        const now = Date.now();
+        if (now - lastChatAt < 600) return; // rate limit: descarta em silêncio
+        const who = spectating
+          ? { seat: -1, name: room.spectators.find((sp) => sp.ws === ws)?.name ?? 'Espectador' }
+          : { seat: mySeat, name: room.seats[mySeat]?.name ?? 'Jogador' };
+        let out: Record<string, unknown> | null = null;
+        if (t === 'chat') {
+          const text = String(msg.text ?? '').trim().slice(0, 140);
+          if (text) out = { t: 'chat', seat: who.seat, name: who.name, text };
+        } else {
+          const id = Number(msg.id);
+          if (Number.isInteger(id) && id >= 0 && id < EMOTES.length)
+            out = { t: 'emote', seat: who.seat, name: who.name, emote: EMOTES[id] };
+        }
+        if (!out) return;
+        lastChatAt = now; // só mensagens válidas consomem a janela do rate limit
+        for (const s2 of room.seats) if (s2?.ws && s2.connected) send(s2.ws, out);
+        for (const sp of room.spectators) send(sp.ws, out);
         return;
       }
 

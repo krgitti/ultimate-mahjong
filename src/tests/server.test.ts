@@ -38,6 +38,8 @@ interface Snap {
   rankedWins?: number;
   rankedPoints?: number;
   elo?: number;
+  text?: string;
+  emote?: string;
   rows?: { username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[];
 }
 
@@ -587,4 +589,112 @@ describe('item 6a — Elo + leaderboard', () => {
     }
     if (!ok) console.log('postgres unavailable — skipping PG elo test');
   }, 60000);
+});
+
+describe('item 6b — chat de mesa e emotes', () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  it('chat/emotes chegam a jogadores e espectadores, com limites e sem tocar no estado', async () => {
+    const PORT7 = 8909;
+    const server = startServer({ port: PORT7 });
+    try {
+      const A = client(PORT7);
+      const B = client(PORT7);
+      const C = client(PORT7);
+      const sendOpen = (c: TestClient, msg: unknown) => {
+        if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+        else c.ws.on('open', () => c.ws.send(JSON.stringify(msg)));
+      };
+
+      sendOpen(A, { t: 'create', name: 'Ana' });
+      const j = await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      sendOpen(B, { t: 'join', code: j.code, name: 'Bia' });
+      await B.next((m) => m.t === 'joined', 15000, 'B joined');
+      sendOpen(C, { t: 'spectate', code: j.code, name: 'Spy' });
+      await C.next((m) => m.t === 'joined', 15000, 'C spectating');
+
+      // chat simples → jogadores e espectadores
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'olá' }));
+      const cb = await B.next((m) => m.t === 'chat', 10000, 'B chat');
+      expect(cb.seat).toBe(0);
+      expect(cb.text).toBe('olá');
+      const cc = await C.next((m) => m.t === 'chat', 10000, 'C chat');
+      expect(cc.text).toBe('olá');
+
+      // texto longo → truncado em 140
+      await sleep(700);
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'x'.repeat(300) }));
+      const ct = await B.next((m) => m.t === 'chat' && m.text !== 'olá', 10000, 'B trunc');
+      expect(ct.text!.length).toBe(140);
+
+      // emote válido → emoji do conjunto do servidor
+      await sleep(700);
+      A.ws.send(JSON.stringify({ t: 'emote', id: 2 }));
+      const em = await B.next((m) => m.t === 'emote', 10000, 'B emote');
+      expect(em.emote).toBe('😮');
+      expect(em.seat).toBe(0);
+
+      // emote inválido → nenhuma mensagem (a próxima é o chat válido)
+      await sleep(700);
+      A.ws.send(JSON.stringify({ t: 'emote', id: 99 }));
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'depois' }));
+      const nxt = await B.next((m) => m.t === 'chat' && m.text === 'depois' || m.t === 'emote', 10000, 'B after invalid');
+      expect(nxt.t).toBe('chat');
+
+      // rate limit: duas mensagens no mesmo instante → só a primeira passa
+      await sleep(700);
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'r1' }));
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'r2' }));
+      const r1 = await B.next((m) => m.t === 'chat' && m.text === 'r1', 10000, 'r1');
+      expect(r1.text).toBe('r1');
+      let leaked = false;
+      try {
+        await B.next((m) => m.t === 'chat' && m.text === 'r2', 500, 'r2 should not arrive');
+        leaked = true;
+      } catch {
+        /* esperado: r2 descartada */
+      }
+      expect(leaked).toBe(false);
+
+      // estado autoritativo intacto: nenhum snapshot NOVO por causa do chat
+      // (esvazia primeiro os snapshots antigos, dos joins)
+      for (;;) {
+        try {
+          await B.next((m) => m.t === 'snapshot', 60, 'drain');
+        } catch {
+          break;
+        }
+      }
+      let snapshotDuringChat = false;
+      try {
+        await B.next((m) => m.t === 'snapshot', 400, 'no snapshot expected');
+        snapshotDuringChat = true;
+      } catch {
+        /* esperado: chat não gera snapshot */
+      }
+      expect(snapshotDuringChat).toBe(false);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
+
+  it('chat fora de sala é ignorado', async () => {
+    const PORT8 = 8910;
+    const server = startServer({ port: PORT8 });
+    try {
+      const A = client(PORT8);
+      if (A.ws.readyState !== WebSocket.OPEN) await new Promise((r) => A.ws.on('open', r));
+      A.ws.send(JSON.stringify({ t: 'chat', text: 'ninguém ouve' }));
+      let got = false;
+      try {
+        await A.next(() => true, 500, 'nothing expected');
+        got = true;
+      } catch {
+        /* esperado: silêncio */
+      }
+      expect(got).toBe(false);
+    } finally {
+      await server.close();
+    }
+  }, 15000);
 });
