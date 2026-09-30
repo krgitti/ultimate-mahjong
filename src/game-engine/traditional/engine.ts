@@ -737,10 +737,27 @@ export function scoreCandidate(
       const n = s.doraIndicators.length;
       s.uraIndicators = s.deadWall.slice(Math.max(0, L - 2 * n), L - n);
     }
+  const wFace = faceIdxOf(s, tileId);
+  // copies of the winning tile visible to everyone BEFORE the win
+  let winTileVisible = 0;
+  for (const pl of s.players) {
+    for (const d of pl.discards) if (faceIdxOf(s, d) === wFace) winTileVisible++;
+    for (const m of pl.melds) {
+      if (m.kind === 'ankan' && pl.seat !== seat) continue; // concealed kongs are hidden
+      for (const t of m.tiles) if (faceIdxOf(s, t) === wFace) winTileVisible++;
+    }
+    if (pl.seat === seat) {
+      // winner's own concealed copies (the winning tile itself is not counted)
+      for (const t of pl.hand) if (t !== tileId && faceIdxOf(s, t) === wFace) winTileVisible++;
+    }
+  }
   return s.ruleset.score({
     concealedCounts: concealed,
     melds,
-    winFace: faceIdxOf(s, tileId),
+    winTileVisible,
+    flowerRanks: p.bonus.filter((id) => s.tiles[id].face.suit === 'flower').map((id) => s.tiles[id].face.rank),
+    seasonRanks: p.bonus.filter((id) => s.tiles[id].face.suit === 'season').map((id) => s.tiles[id].face.rank),
+    winFace: wFace,
     selfDrawn,
     seatWind: seatWindOf(s, seat),
     roundWind: s.roundWind,

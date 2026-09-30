@@ -53,7 +53,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
     settings.traditional.rules === 'riichi'
       ? riichiRuleset({ handsPerMatch: settings.traditional.hands, renchan: true })
       : settings.traditional.rules === 'mcr'
-        ? mcrRuleset({ handsPerMatch: settings.traditional.hands, renchan: false, minFan: 8 })
+        ? mcrRuleset({ handsPerMatch: settings.traditional.hands, renchan: false, minFan: 8, flowerPositionBonus: true })
         : hkRuleset(rules);
   const stateRef = useRef<TradState | null>(null);
   if (stateRef.current === null) stateRef.current = newMatch(ruleset, Date.now() >>> 0);

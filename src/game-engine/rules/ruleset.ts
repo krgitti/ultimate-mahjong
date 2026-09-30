@@ -34,6 +34,11 @@ export interface WinContext {
   doraIndicators: number[];
   /** riichi: ura indicators (only populated for riichi winners) */
   uraIndicators: number[];
+  /** MCR: copies of the winning tile already visible before the win (Last Tile fan) */
+  winTileVisible?: number;
+  /** MCR: ranks (1-4) of the winner's flower/season bonus tiles */
+  flowerRanks?: number[];
+  seasonRanks?: number[];
 }
 
 export interface Ruleset {
