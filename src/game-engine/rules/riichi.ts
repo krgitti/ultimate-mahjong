@@ -1,6 +1,7 @@
 import type { Counts } from '../traditional/hand';
 import { isCompleteHand, isSevenPairs, isThirteenOrphans } from '../traditional/hand';
 import type { MeldLike, FanItem } from '../scoring/hongkong-scoring';
+import { computeFu } from '../scoring/fu';
 import type { Ruleset } from './ruleset';
 import { indexToFace, isTerminalOrHonor } from '../tiles/tiles';
 
@@ -35,6 +36,14 @@ const WIND_E = 27;
 const DRAGON_R = 31;
 
 const roundUp100 = (n: number) => Math.ceil(n / 100) * 100;
+
+/** the dora tile indicated by an indicator (next in suit cycle) */
+export function doraOf(indicator: number): number {
+  if (indicator >= 31) return 31 + ((indicator - 31 + 1) % 3); // dragons
+  if (indicator >= 27) return 27 + ((indicator - 27 + 1) % 4); // winds
+  const start = Math.floor(indicator / 9) * 9;
+  return start + ((indicator - start + 1) % 9);
+}
 
 interface SeqDecomp {
   pair: number;
@@ -144,30 +153,62 @@ export function riichiRuleset(cfg: RiichiConfig = { handsPerMatch: 4, renchan: t
       if (!isChiitoi && !isKokushi && !hasChi) add('Toi-toi (mão de trincas)', 2);
 
       // pinfu (simplified): concealed, all sequences, non-yakuhai pair, ryanmen wait
+      let pinfuFlag = false;
       if (!isChiitoi && !isKokushi && concealed && ctx.melds.length === 0) {
         const dec = allSequencesDecomp(ctx.concealedCounts);
         if (dec && dec.pair !== seatFace && dec.pair !== roundFace && dec.pair < DRAGON_R) {
-          const winSeq = dec.sequences.find((s) => s.includes(ctx.winFace));
+          const winSeq = dec.sequences.find((s2) => s2.includes(ctx.winFace));
           if (winSeq) {
             const [a, , c2] = winSeq;
             const suitStart = Math.floor(ctx.winFace / 9) * 9;
             const ryanmen =
               (ctx.winFace === a && c2 + 1 <= suitStart + 8) ||
               (ctx.winFace === c2 && a - 1 >= suitStart);
-            if (ryanmen) add('Pinfu', 1);
+            if (ryanmen) {
+              pinfuFlag = true;
+              add('Pinfu', 1);
+            }
           }
         }
       }
 
-      const han = items.reduce((s, i) => s + i.fan, 0);
-      const meetsMinimum = han >= 1; // yaku requirement
-      const fu = isChiitoi ? 25 : 30;
+      if (ctx.ippatsu) add('Ippatsu', 1);
+
+      // dora / ura-dora: han but NOT yaku (do not qualify)
+      const countDora = (inds: number[], label: string) => {
+        let n = 0;
+        for (const ind of inds) {
+          const d = doraOf(ind);
+          for (const f of allFaces) if (f === d) n++;
+        }
+        if (n > 0) items.push({ name: label, fan: n, qualifies: false });
+      };
+      countDora(ctx.doraIndicators, `Dora (${ctx.doraIndicators.length} indicador${ctx.doraIndicators.length > 1 ? 'es' : ''})`);
+      if (ctx.riichi) countDora(ctx.uraIndicators, 'Ura dora');
+
+      const han = items.reduce((s2, i) => s2 + i.fan, 0);
+      const yaku = items.filter((i) => i.qualifies).reduce((s2, i) => s2 + i.fan, 0);
+      const meetsMinimum = yaku >= 1; // yaku requirement
+      const preWin = [...ctx.concealedCounts];
+      preWin[ctx.winFace] = Math.max(0, preWin[ctx.winFace] - 1);
+      const fu = computeFu({
+        concealedCounts: ctx.concealedCounts,
+        preWin,
+        melds: ctx.melds.map((m) => ({ kind: m.kind, face: m.faces[0] })),
+        winFace: ctx.winFace,
+        selfDrawn: ctx.selfDrawn,
+        seatWind: ctx.seatWind,
+        roundWind: ctx.roundWind,
+        isChiitoi,
+        isKokushi,
+        pinfu: pinfuFlag,
+      });
       const points = meetsMinimum ? basePoints(han, fu) : 0;
 
       return {
         items,
         totalFan: han,
-        qualifyingFan: han,
+        qualifyingFan: yaku,
         capped: han >= 5,
         points,
         meetsMinimum,

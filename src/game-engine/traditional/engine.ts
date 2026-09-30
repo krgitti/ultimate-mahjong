@@ -33,6 +33,7 @@ export interface PlayerState {
   score: number; // cumulative match score
   riichi: boolean; // declared (riichi ruleset)
   riichiLock: boolean; // after the declaration discard, only tsumogiri
+  ippatsu: boolean; // win within one turn cycle of riichi, no calls in between
 }
 
 export type Phase = 'draw' | 'discard' | 'calls' | 'calls-rob' | 'hand-over' | 'match-over';
@@ -81,6 +82,9 @@ export interface TradState {
   events: GameEvent[];
   /** set while an added kong waits for possible robs */
   robTarget: { seat: number; tileId: number } | null;
+  /** riichi: dora indicator tiles (grows with each kan); ura revealed on riichi win */
+  doraIndicators: number[];
+  uraIndicators: number[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -150,6 +154,7 @@ export function newMatch(
       score: 0,
       riichi: false,
       riichiLock: false,
+      ippatsu: false,
     })),
     wall: [],
     deadWall: [],
@@ -166,6 +171,8 @@ export function newMatch(
     result: null,
     events: [],
     robTarget: null,
+    doraIndicators: [],
+    uraIndicators: [],
   };
   startHand(s);
   return s;
@@ -183,6 +190,7 @@ export function startHand(s: TradState): void {
     p.discards = [];
     p.riichi = false;
     p.riichiLock = false;
+    p.ippatsu = false;
   }
   s.lastDiscard = null;
   s.offers = [];
@@ -191,6 +199,8 @@ export function startHand(s: TradState): void {
   s.lastDrawWasReplacement = false;
   s.drawnTile = null;
   s.robTarget = null;
+  s.uraIndicators = [];
+  s.doraIndicators = s.ruleset.name === 'Riichi' && s.deadWall.length > 0 ? [s.deadWall[s.deadWall.length - 1]] : [];
   s.roundWind = Math.min(4, Math.floor((s.handNumber - 1) / 4) + 1);
 
   // deal 13 to each, dealer gets 14th
@@ -380,8 +390,14 @@ export function canRiichi(s: TradState, seat: number): boolean {
 export function declareRiichi(s: TradState, seat: number): boolean {
   if (!canRiichi(s, seat)) return false;
   s.players[seat].riichi = true;
+  s.players[seat].ippatsu = true;
   log(s, 'riichi', seat, undefined, `${s.players[seat].name} declara RIICHI`);
   return true;
+}
+
+/** every executed call breaks ippatsu (v1 documented simplification) */
+function breakIppatsu(s: TradState) {
+  for (const p of s.players) p.ippatsu = false;
 }
 
 /** Added kong: seat holds the 4th tile of an existing pon, during their discard phase. */
@@ -534,16 +550,20 @@ export function executeCall(s: TradState, seat: number, offer: Offer, chiChoice?
   if (offer.kind === 'pon') {
     const taken = take(2);
     taker.melds.push({ kind: 'pon', tiles: [...taken, tileId], from, added: false });
+    breakIppatsu(s);
     log(s, 'call', seat, tileId, `${taker.name} faz PON`);
   } else if (offer.kind === 'kan') {
     const taken = take(3);
     taker.melds.push({ kind: 'kan', tiles: [...taken, tileId], from, added: false });
     s.pendingReplacementDraw = true;
+    addKanDora(s);
+    breakIppatsu(s);
     log(s, 'call', seat, tileId, `${taker.name} faz KONG`);
   } else if (offer.kind === 'chi') {
     const [a, b] = chiChoice ?? offer.chiOptions![0];
     taker.hand = taker.hand.filter((id) => id !== a && id !== b);
     taker.melds.push({ kind: 'chi', tiles: [a, b, tileId], from, added: false });
+    breakIppatsu(s);
     log(s, 'call', seat, tileId, `${taker.name} faz CHOW`);
   }
   sortHand(s, seat);
@@ -565,6 +585,7 @@ export function declareAnkan(s: TradState, seat: number): boolean {
   p.hand = p.hand.filter((id) => faceIdxOf(s, id) !== fIdx);
   p.melds.push({ kind: 'ankan', tiles: taken, from: null, added: false });
   s.pendingReplacementDraw = true;
+  addKanDora(s);
   s.phase = 'draw';
   log(s, 'call', seat, taken[0], `${p.name} faz KONG fechado`);
   return true;
@@ -610,8 +631,17 @@ function completeAddedKong(s: TradState): void {
   }
   s.robTarget = null;
   s.pendingReplacementDraw = true;
+  addKanDora(s);
   s.phase = 'draw';
   log(s, 'call', seat, tileId, `${p.name} adiciona KONG`);
+}
+
+/** each kan reveals the next dead-wall tile as dora indicator (riichi only).
+ *  The tile STAYS on the dead wall (it is only flipped), keeping tile counts intact. */
+function addKanDora(s: TradState) {
+  if (s.ruleset.name !== 'Riichi') return;
+  const idx = s.deadWall.length - 1 - s.doraIndicators.length;
+  if (idx >= 0) s.doraIndicators.push(s.deadWall[idx]);
 }
 
 /** Resolve the rob window; decide(seat) returns true to rob. */
@@ -671,6 +701,12 @@ export function scoreCandidate(
   }));
   const flowers = p.bonus.filter((id) => s.tiles[id].face.suit === 'flower').length;
   const seasons = p.bonus.filter((id) => s.tiles[id].face.suit === 'season').length;
+    // ura indicators are revealed only to a riichi winner, at win time
+    if (p.riichi && s.uraIndicators.length === 0) {
+      const L = s.deadWall.length;
+      const n = s.doraIndicators.length;
+      s.uraIndicators = s.deadWall.slice(Math.max(0, L - 2 * n), L - n);
+    }
   return s.ruleset.score({
     concealedCounts: concealed,
     melds,
@@ -684,6 +720,9 @@ export function scoreCandidate(
     robbedKong,
     lastTile,
     riichi: p.riichi,
+    ippatsu: p.ippatsu,
+    doraIndicators: s.doraIndicators.map((id) => faceIdxOf(s, id)),
+    uraIndicators: p.riichi ? s.uraIndicators.map((id) => faceIdxOf(s, id)) : [],
   });
 }
 

@@ -362,6 +362,16 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
             <span className="wind-badge">Dominante: {WIND_PT[s.roundWind]}</span>
             <span>Muro: <b>{s.wall.length}</b></span>
             <span>Morto: <b>{s.deadWall.length}</b></span>
+            {s.ruleset.name === 'Riichi' && s.doraIndicators.length > 0 && (
+              <span className="dora-badge" title="Indicador de dora: a próxima peça vale +1 han">
+                Dora:{' '}
+                {s.doraIndicators.map((id) => (
+                  <span key={id} className="dora-tile">
+                    <TileFaceArt face={faceOf(s, id)} />
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
           <div className="ponds-grid">
             {pondBox(2)}

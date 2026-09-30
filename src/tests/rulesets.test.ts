@@ -92,6 +92,9 @@ describe('item 1 — riichi ruleset scoring & payments', () => {
       robbedKong: false,
       lastTile: false,
       riichi: false,
+      ippatsu: false,
+      doraIndicators: [],
+      uraIndicators: [],
     });
     expect(res.meetsMinimum).toBe(false);
     expect(res.points).toBe(0);
@@ -111,6 +114,9 @@ describe('item 1 — riichi ruleset scoring & payments', () => {
       robbedKong: false,
       lastTile: false,
       riichi: false,
+      ippatsu: false,
+      doraIndicators: [],
+      uraIndicators: [],
     });
     expect(res.meetsMinimum).toBe(true);
     expect(res.totalFan).toBe(2);
@@ -135,6 +141,9 @@ describe('item 1 — riichi ruleset scoring & payments', () => {
       robbedKong: false,
       lastTile: false,
       riichi: true,
+      ippatsu: true,
+      doraIndicators: [],
+      uraIndicators: [],
     });
     // riichi + tsumo + tanyao + pinfu
     expect(res.items.map((i) => i.name)).toContain('Riichi');
@@ -163,10 +172,106 @@ describe('item 1 — riichi ruleset scoring & payments', () => {
       robbedKong: false,
       lastTile: false,
       riichi: false,
+      ippatsu: false,
+      doraIndicators: [],
+      uraIndicators: [],
     });
     expect(res.points).toBe(8000);
     const pays = R.payments(res.points, false, 0, 2, 0); // winner dealer(2)? dealer is 0 here; winner 2 non-dealer
     expect(pays[0]).toBe(32000);
+  });
+
+  it('full fu: pinfu ron = 30 fu; concealed terminal pung + tsumo + kanchan rounds to 40', () => {
+    // pinfu hand: 234m 567m 234p 67p 55s, win on 5p (ryanmen)
+    const pinfuRes = R.score({
+      concealedCounts: countsFromFaces([man(2), man(3), man(4), man(5), man(6), man(7), pin(2), pin(3), pin(4), pin(6), pin(7), pin(5), sou(5), sou(5)]),
+      melds: [],
+      winFace: faceIndex(pin(5)),
+      selfDrawn: false,
+      seatWind: 2,
+      roundWind: 1,
+      flowers: 0,
+      seasons: 0,
+      winOnKong: false,
+      robbedKong: false,
+      lastTile: false,
+      riichi: false,
+      ippatsu: false,
+      doraIndicators: [],
+      uraIndicators: [],
+    });
+    expect(pinfuRes.items.map((i) => i.name)).toContain('Pinfu');
+    expect(pinfuRes.points).toBe(500); // pinfu+tanyao = 2 han, 30 fu -> 480 -> 500
+    // terminal pung: 999m concealed + 234m + 456p + 55s + 5-7p win on 6p (kanchan), tsumo
+    const fuRes = R.score({
+      concealedCounts: countsFromFaces([man(9), man(9), man(9), man(2), man(3), man(4), pin(4), pin(5), pin(6), sou(5), sou(5), pin(5), pin(7), pin(6)]),
+      melds: [],
+      winFace: faceIndex(pin(6)),
+      selfDrawn: true,
+      seatWind: 2,
+      roundWind: 1,
+      flowers: 0,
+      seasons: 0,
+      winOnKong: false,
+      robbedKong: false,
+      lastTile: false,
+      riichi: false,
+      ippatsu: false,
+      doraIndicators: [],
+      uraIndicators: [],
+    });
+    // 20 + tsumo 2 + concealed terminal pung 8 + kanchan 2 = 32 -> 40 fu; 1 han (tsumo)
+    expect(fuRes.points).toBe(400); // 40 * 2^3 = 320 -> 400
+  });
+
+  it('dora gives han but NOT yaku: dora-only open hand cannot win', () => {
+    // indicator 1m -> dora 2m; open chi hand holding two 2m and no yaku
+    const res = R.score({
+      concealedCounts: countsFromFaces([man(2), man(2), man(3), man(4), man(5), pin(6), pin(7), pin(8), pin(7), pin(8), pin(9)]),
+      melds: [{ kind: 'chi', faces: [3, 4, 5] }],
+      winFace: faceIndex(pin(9)),
+      selfDrawn: false,
+      seatWind: 2,
+      roundWind: 1,
+      flowers: 0,
+      seasons: 0,
+      winOnKong: false,
+      robbedKong: false,
+      lastTile: false,
+      riichi: false,
+      ippatsu: false,
+      doraIndicators: [faceIndex(man(1))],
+      uraIndicators: [],
+    });
+    expect(res.items.some((i) => i.name.startsWith('Dora'))).toBe(true);
+    expect(res.meetsMinimum).toBe(false);
+  });
+
+  it('ippatsu and ura dora apply to riichi winners', () => {
+    const res = R.score({
+      concealedCounts: countsFromFaces([man(2), man(3), man(4), man(5), man(6), man(7), pin(2), pin(3), pin(4), pin(6), pin(7), pin(5), sou(5), sou(5)]),
+      melds: [],
+      winFace: faceIndex(pin(5)),
+      selfDrawn: true,
+      seatWind: 2,
+      roundWind: 1,
+      flowers: 0,
+      seasons: 0,
+      winOnKong: false,
+      robbedKong: false,
+      lastTile: false,
+      riichi: true,
+      ippatsu: true,
+      doraIndicators: [faceIndex(man(1))], // dora = 2m (two in hand)
+      uraIndicators: [faceIndex(pin(4))], // ura = 5p (one in hand)
+    });
+    const names = res.items.map((i) => i.name);
+    expect(names).toContain('Ippatsu');
+    expect(names.some((n) => n.startsWith('Dora'))).toBe(true);
+    expect(names).toContain('Ura dora');
+    // riichi 1 + tsumo 1 + tanyao 1 + pinfu 1 + ippatsu 1 = 5 yaku; +1 dora +1 ura = 7 han
+    expect(res.totalFan).toBe(7);
+    expect(res.qualifyingFan).toBe(5);
   });
 
   it('pluggability: engine accepts a Ruleset and drops bonus tiles for riichi', () => {

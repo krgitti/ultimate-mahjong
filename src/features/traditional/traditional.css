@@ -1,0 +1,4 @@
+
+.dora-badge { display: inline-flex; align-items: center; gap: 4px; }
+.dora-tile { display: inline-block; width: 26px; }
+.dora-tile svg { width: 100%; height: auto; border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,.4); }

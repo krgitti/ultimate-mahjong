@@ -28,6 +28,12 @@ export interface WinContext {
   lastTile: boolean;
   /** riichi declaration by the winner (riichi ruleset) */
   riichi: boolean;
+  /** riichi: win within one turn cycle, no calls in between */
+  ippatsu: boolean;
+  /** riichi: dora indicator face indices */
+  doraIndicators: number[];
+  /** riichi: ura indicators (only populated for riichi winners) */
+  uraIndicators: number[];
 }
 
 export interface Ruleset {
