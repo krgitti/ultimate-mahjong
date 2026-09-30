@@ -3,8 +3,11 @@ import { buildFullSet, faceIndex, isBonus, BASIC_FACES } from '../tiles/tiles';
 import { createRng, shuffle, type Rng } from '../tiles/rng';
 import type { HKRules } from '../rules/hongkong';
 import { HK_DEFAULTS } from '../rules/hongkong';
-import { countsFromFaces, isCompleteHand, winningWaits, type Counts } from './hand';
-import { computeScoring, computePayments, type MeldLike, type ScoringResult } from '../scoring/hongkong-scoring';
+import type { Ruleset } from '../rules/ruleset';
+import { isRuleset, hkRuleset } from '../rules/ruleset';
+import { shanten as shantenOf } from './hand';
+import { countsFromFaces, winningWaits, type Counts } from './hand';
+import type { MeldLike, ScoringResult } from '../scoring/hongkong-scoring';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -28,6 +31,8 @@ export interface PlayerState {
   bonus: number[]; // flower/season tile ids
   discards: number[]; // tile ids in discard order
   score: number; // cumulative match score
+  riichi: boolean; // declared (riichi ruleset)
+  riichiLock: boolean; // after the declaration discard, only tsumogiri
 }
 
 export type Phase = 'draw' | 'discard' | 'calls' | 'calls-rob' | 'hand-over' | 'match-over';
@@ -56,7 +61,7 @@ export interface HandResult {
 }
 
 export interface TradState {
-  config: HKRules;
+  ruleset: Ruleset;
   rngState: number;
   tiles: Tile[]; // the physical 144
   players: PlayerState[];
@@ -124,13 +129,14 @@ function log(s: TradState, t: string, seat?: number, tileId?: number, detail?: s
 /* ------------------------------------------------------------------ */
 
 export function newMatch(
-  config: HKRules = HK_DEFAULTS,
+  rules: HKRules | Ruleset = HK_DEFAULTS,
   seed = Date.now() >>> 0,
   names = ['Você', 'Bot Sul', 'Bot Oeste', 'Bot Norte']
 ): TradState {
-  const tiles = buildFullSet();
+  const ruleset = isRuleset(rules) ? rules : hkRuleset(rules);
+  const tiles = buildFullSet(ruleset.includeBonus);
   const s: TradState = {
-    config,
+    ruleset,
     rngState: seed >>> 0,
     tiles,
     players: names.map((name, seat) => ({
@@ -142,6 +148,8 @@ export function newMatch(
       bonus: [],
       discards: [],
       score: 0,
+      riichi: false,
+      riichiLock: false,
     })),
     wall: [],
     deadWall: [],
@@ -173,6 +181,8 @@ export function startHand(s: TradState): void {
     p.melds = [];
     p.bonus = [];
     p.discards = [];
+    p.riichi = false;
+    p.riichiLock = false;
   }
   s.lastDiscard = null;
   s.offers = [];
@@ -276,14 +286,28 @@ export function drawTile(s: TradState): DrawResult {
 
 export function legalDiscards(s: TradState, seat: number): number[] {
   if (s.phase !== 'discard' || s.current !== seat) return [];
-  return [...new Set(s.players[seat].hand)];
+  const p = s.players[seat];
+  const all = [...new Set(p.hand)];
+  if (!p.riichi) return all;
+  if (p.riichiLock && s.drawnTile !== null) return p.hand.includes(s.drawnTile) ? [s.drawnTile] : all;
+  // declaration turn: only discards that keep the hand tenpai
+  const counts = handCounts(s, seat);
+  return all.filter((id) => {
+    const f = faceIdxOf(s, id);
+    counts[f]--;
+    const t = shantenOf(counts, p.melds.length, true);
+    counts[f]++;
+    return t === 0;
+  });
 }
 
 export function discard(s: TradState, tileId: number): boolean {
   if (s.phase !== 'discard' || s.current < 0) return false;
   const p = s.players[s.current];
+  if (!legalDiscards(s, s.current).includes(tileId)) return false;
   const idx = p.hand.indexOf(tileId);
   if (idx === -1) return false;
+  if (p.riichi && !p.riichiLock) p.riichiLock = true; // lock tsumogiri from next turn
   p.hand.splice(idx, 1);
   p.discards.push(tileId);
   s.lastDiscard = { tileId, seat: s.current };
@@ -312,7 +336,7 @@ function advanceTurn(s: TradState) {
 export function canRon(s: TradState, seat: number, tileId: number): boolean {
   const p = s.players[seat];
   const faces = handFaces(s, seat).concat(s.tiles[tileId].face);
-  if (!isCompleteHand(countsFromFaces(faces), p.melds.length)) return false;
+  if (!s.ruleset.canWin(countsFromFaces(faces), p.melds.length)) return false;
   // minimum fan check with provisional context
   const scoring = scoreCandidate(s, seat, tileId, false);
   return scoring.meetsMinimum;
@@ -322,7 +346,7 @@ export function canTsumo(s: TradState, seat: number): boolean {
   const p = s.players[seat];
   if (s.current !== seat || s.phase !== 'discard') return false;
   if (s.drawnTile === null) return false; // win requires an actual drawn tile (not after a call)
-  if (!isCompleteHand(handCounts(s, seat), p.melds.length)) return false;
+  if (!s.ruleset.canWin(handCounts(s, seat), p.melds.length)) return false;
   const lastTile = !s.lastDrawWasReplacement && s.wall.length === 0;
   const scoring = scoreCandidate(s, seat, s.drawnTile, true, lastTile);
   return scoring.meetsMinimum;
@@ -330,9 +354,34 @@ export function canTsumo(s: TradState, seat: number): boolean {
 
 export function canAnkan(s: TradState, seat: number): number | null {
   if (s.current !== seat || s.phase !== 'discard') return null;
+  if (s.players[seat].riichi) return null; // v1: no kans after riichi
   const counts = handCounts(s, seat);
   for (let i = 0; i < 34; i++) if (counts[i] === 4) return i;
   return null;
+}
+
+/**
+ * Riichi declaration (riichi ruleset only): concealed hand, on own discard
+ * phase with a drawn tile, and at least one discard keeps the hand tenpai.
+ */
+export function canRiichi(s: TradState, seat: number): boolean {
+  if (!s.ruleset.allowsRiichi) return false;
+  if (s.current !== seat || s.phase !== 'discard' || s.drawnTile === null) return false;
+  const p = s.players[seat];
+  if (p.riichi) return false;
+  if (p.melds.some((m) => m.kind !== 'ankan')) return false;
+  return legalDiscards(s, seat).some((id) => {
+    const counts = handCounts(s, seat);
+    counts[faceIdxOf(s, id)]--;
+    return shantenOf(counts, p.melds.length, true) === 0;
+  });
+}
+
+export function declareRiichi(s: TradState, seat: number): boolean {
+  if (!canRiichi(s, seat)) return false;
+  s.players[seat].riichi = true;
+  log(s, 'riichi', seat, undefined, `${s.players[seat].name} declara RIICHI`);
+  return true;
 }
 
 /** Added kong: seat holds the 4th tile of an existing pon, during their discard phase. */
@@ -357,6 +406,8 @@ export function computeOffers(s: TradState): void {
   for (let i = 1; i <= 3; i++) {
     const seat = (from + i) % 4;
     if (canRon(s, seat, tileId)) s.offers.push({ seat, kind: 'ron' });
+    // a player in riichi may only ron — no further calls
+    if (s.players[seat].riichi) continue;
     const counts = handCounts(s, seat);
     if (counts[fIdx] >= 2) s.offers.push({ seat, kind: 'pon' });
     if (counts[fIdx] === 3) s.offers.push({ seat, kind: 'kan' });
@@ -596,7 +647,7 @@ export function resolveRob(
 function canRonWith(s: TradState, seat: number, tileId: number): boolean {
   const p = s.players[seat];
   const faces = handFaces(s, seat).concat(s.tiles[tileId].face);
-  if (!isCompleteHand(countsFromFaces(faces), p.melds.length)) return false;
+  if (!s.ruleset.canWin(countsFromFaces(faces), p.melds.length)) return false;
   return scoreCandidate(s, seat, tileId, false, false, true).meetsMinimum;
 }
 
@@ -620,7 +671,7 @@ export function scoreCandidate(
   }));
   const flowers = p.bonus.filter((id) => s.tiles[id].face.suit === 'flower').length;
   const seasons = p.bonus.filter((id) => s.tiles[id].face.suit === 'season').length;
-  return computeScoring({
+  return s.ruleset.score({
     concealedCounts: concealed,
     melds,
     winFace: faceIdxOf(s, tileId),
@@ -632,7 +683,7 @@ export function scoreCandidate(
     winOnKong: selfDrawn && s.lastDrawWasReplacement,
     robbedKong,
     lastTile,
-    rules: s.config,
+    riichi: p.riichi,
   });
 }
 
@@ -656,7 +707,7 @@ function finishHandWithWin(
   const discardSeat = selfDrawn
     ? null
     : (discardSeatOverride ?? s.lastDiscard?.seat ?? null);
-  const payments = computePayments(s.config, scoring.points, selfDrawn, discardSeat, seat);
+  const payments = s.ruleset.payments(scoring.points, selfDrawn, discardSeat, seat, s.dealer);
   for (let i = 0; i < 4; i++) {
     s.players[i].score -= payments[i];
     s.players[seat].score += payments[i];
@@ -669,19 +720,19 @@ function finishHandWithWin(
     'win',
     seat,
     tileId,
-    `${s.players[seat].name} vence (${selfDrawn ? 'TSUMO' : robbedKong ? 'ROUBO DO KONG' : 'RON'}) — ${scoring.totalFan} fan, ${scoring.points} pontos`
+    `${s.players[seat].name} vence (${selfDrawn ? 'TSUMO' : robbedKong ? 'ROUBO DO KONG' : 'RON'}) — ${scoring.totalFan} ${s.ruleset.id === 'riichi' ? 'han' : 'fan'}, ${scoring.points} pontos`
   );
 }
 
 export function nextHandOrEnd(s: TradState): void {
   if (s.phase !== 'hand-over') return;
-  if (s.handNumber >= s.config.handsPerMatch) {
+  if (s.handNumber >= s.ruleset.handsPerMatch) {
     s.phase = 'match-over';
     log(s, 'match-over', undefined, undefined, 'Fim da partida');
     return;
   }
   // dealer retention
-  if (s.config.renchan && s.result?.kind === 'win' && s.result.winner === s.dealer) {
+  if (s.ruleset.renchan && s.result?.kind === 'win' && s.result.winner === s.dealer) {
     // dealer stays
   } else {
     s.dealer = (s.dealer + 1) % 4;
@@ -704,6 +755,7 @@ export interface PublicPlayer {
   bonusFaces: ReturnType<typeof faceOf>[];
   discards: ReturnType<typeof faceOf>[];
   score: number;
+  riichi: boolean;
 }
 
 export interface PublicState {
@@ -745,6 +797,7 @@ export function publicView(s: TradState, viewerSeat: number): PublicState {
       bonusFaces: p.bonus.map((id) => faceOf(s, id)),
       discards: p.discards.map((id) => faceOf(s, id)),
       score: p.score,
+      riichi: p.riichi,
     })),
     lastDiscard: s.lastDiscard ? { face: faceOf(s, s.lastDiscard.tileId), seat: s.lastDiscard.seat } : null,
     offers: s.offers,

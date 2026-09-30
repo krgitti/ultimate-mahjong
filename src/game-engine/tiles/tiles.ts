@@ -76,12 +76,12 @@ export interface Tile {
   face: TileFace;
 }
 
-/** Build the full 144-tile set. ids 0..143, deterministic order. */
-export function buildFullSet(): Tile[] {
+/** Build the full tile set. ids deterministic. 144 with bonus, 136 without. */
+export function buildFullSet(includeBonus = true): Tile[] {
   const tiles: Tile[] = [];
   let id = 0;
   for (const f of BASIC_FACES) for (let c = 0; c < 4; c++) tiles.push({ id: id++, face: f });
-  for (const f of BONUS_FACES) tiles.push({ id: id++, face: f });
+  if (includeBonus) for (const f of BONUS_FACES) tiles.push({ id: id++, face: f });
   return tiles;
 }
 

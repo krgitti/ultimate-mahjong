@@ -30,6 +30,13 @@ export function HomeScreen({ onLaunchSolitaire }: { onLaunchSolitaire: (l: Solit
       meta: 'Fácil · Médio · Difícil',
     },
     {
+      icon: '🌐',
+      name: 'Jogar online',
+      desc: 'Multiplayer real via servidor autoritativo: crie uma sala, compartilhe o código e jogue com amigos (bots completam a mesa).',
+      action: () => navigate('online'),
+      meta: 'requer npm run server',
+    },
+    {
       icon: '🎓',
       name: 'Aprender',
       desc: 'Tutoriais interativos: liberdade e camadas no Solitaire; compras, chamadas e vitória no Tradicional.',

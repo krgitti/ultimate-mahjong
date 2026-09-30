@@ -10,6 +10,7 @@ import { ChallengesScreen } from '../features/challenges/ChallengesScreen';
 import { StatsScreen } from '../features/profile/StatsScreen';
 import { SettingsScreen } from '../features/profile/SettingsScreen';
 import { EditorScreen } from '../features/solitaire/EditorScreen';
+import { OnlineScreen } from '../features/online/OnlineScreen';
 
 export type Route =
   | { name: 'home' }
@@ -19,7 +20,8 @@ export type Route =
   | { name: 'challenges' }
   | { name: 'stats' }
   | { name: 'settings' }
-  | { name: 'editor' };
+  | { name: 'editor' }
+  | { name: 'online' };
 
 /** Payloads handed to game screens when launched from campaign/challenges. */
 export interface SolitaireLaunch {
@@ -42,6 +44,7 @@ function parseHash(): Route {
     case 'stats': return { name: 'stats' };
     case 'settings': return { name: 'settings' };
     case 'editor': return { name: 'editor' };
+    case 'online': return { name: 'online' };
     default: return { name: 'home' };
   }
 }
@@ -112,6 +115,9 @@ export function App() {
       break;
     case 'editor':
       page = <EditorScreen />;
+      break;
+    case 'online':
+      page = <OnlineScreen />;
       break;
     default:
       page = <HomeScreen onLaunchSolitaire={launchSolitaire} />;

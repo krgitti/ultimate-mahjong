@@ -78,11 +78,12 @@ export function SettingsScreen({
             <select
               value={settings.traditional.rules}
               onChange={(e) =>
-                onChange({ traditional: { ...settings.traditional, rules: e.target.value as 'classic' | 'chicken' } })
+                onChange({ traditional: { ...settings.traditional, rules: e.target.value as 'classic' | 'chicken' | 'riichi' } })
               }
             >
               <option value="classic">Clássica (mínimo 3 fan)</option>
               <option value="chicken">Chicken hand (mínimo 1 fan)</option>
+              <option value="riichi">Riichi (japonês — yaku/han, sete pares, riichi)</option>
             </select>
           </label>
           <label className="field">

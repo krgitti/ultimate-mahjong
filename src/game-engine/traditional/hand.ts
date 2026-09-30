@@ -51,11 +51,17 @@ export function canFormMelds(counts: Counts, need: number): boolean {
 /**
  * Is the concealed count array (3n+2 tiles) a complete hand given
  * `fixedMelds` already declared melds? 4 melds + 1 pair total.
+ * With `allowAlternatives`, seven pairs / thirteen orphans also count
+ * (only when no melds are declared, as in every real variant that has them).
  */
-export function isCompleteHand(counts: Counts, fixedMelds: number): boolean {
+export function isCompleteHand(counts: Counts, fixedMelds: number, allowAlternatives = false): boolean {
   const need = 4 - fixedMelds;
   const total = counts.reduce((a, b) => a + b, 0);
   if (total !== need * 3 + 2) return false;
+  if (allowAlternatives && fixedMelds === 0 && total === 14) {
+    if (isSevenPairs(counts)) return true;
+    if (isThirteenOrphans(counts)) return true;
+  }
   const c = [...counts];
   for (let i = 0; i < 34; i++) {
     if (c[i] >= 2) {
@@ -66,6 +72,78 @@ export function isCompleteHand(counts: Counts, fixedMelds: number): boolean {
     }
   }
   return false;
+}
+
+/** Seven pairs: 14 tiles, seven distinct pairs (a quad does NOT count as two pairs). */
+export function isSevenPairs(counts: Counts): boolean {
+  let pairs = 0;
+  let total = 0;
+  for (const n of counts) {
+    if (n === 0) continue;
+    if (n !== 2) return false;
+    pairs++;
+    total += n;
+  }
+  return total === 14 && pairs === 7;
+}
+
+/** Thirteen orphans: one of each terminal/honor plus a duplicate of one of them. */
+export function isThirteenOrphans(counts: Counts): boolean {
+  let total = 0;
+  for (const n of counts) total += n;
+  if (total !== 14) return false;
+  let pair = 0;
+  for (let i = 0; i < 34; i++) {
+    const terminalOrHonor = i >= 27 || i % 9 === 0 || i % 9 === 8;
+    if (!terminalOrHonor && counts[i] > 0) return false;
+    if (terminalOrHonor) {
+      if (counts[i] === 0 || counts[i] > 2) return false;
+      if (counts[i] === 2) pair++;
+    } else if (counts[i] !== 0) return false;
+  }
+  // all 13 kinds present?
+  let kinds = 0;
+  for (let i = 0; i < 34; i++) {
+    const terminalOrHonor = i >= 27 || i % 9 === 0 || i % 9 === 8;
+    if (terminalOrHonor && counts[i] > 0) kinds++;
+  }
+  return kinds === 13 && pair === 1;
+}
+
+/** Chiitoitsu shanten (6 - pairs, quads count once as a pair). 14-tile based; -1 complete. */
+export function chiitoitsuShanten(counts: Counts): number {
+  let pairs = 0;
+  let kinds = 0;
+  for (const n of counts) {
+    if (n > 0) kinds++;
+    if (n >= 2) pairs++;
+  }
+  const missingKinds = Math.max(0, 7 - kinds);
+  return 6 - Math.min(pairs, 7) + missingKinds;
+}
+
+/** Kokushi shanten: 13 - (distinct terminals/honors) - (has pair ? 1 : 0). */
+export function kokushiShanten(counts: Counts): number {
+  let kinds = 0;
+  let pair = false;
+  for (let i = 0; i < 34; i++) {
+    const terminalOrHonor = i >= 27 || i % 9 === 0 || i % 9 === 8;
+    if (!terminalOrHonor) continue;
+    if (counts[i] > 0) kinds++;
+    if (counts[i] >= 2) pair = true;
+  }
+  return 13 - kinds - (pair ? 1 : 0);
+}
+
+/** Minimum shanten across enabled forms. */
+export function shanten(
+  counts: Counts,
+  fixedMelds: number,
+  allowAlternatives = false
+): number {
+  const normal = normalShanten(counts, fixedMelds);
+  if (!allowAlternatives || fixedMelds > 0) return normal;
+  return Math.min(normal, chiitoitsuShanten(counts), kokushiShanten(counts));
 }
 
 /**

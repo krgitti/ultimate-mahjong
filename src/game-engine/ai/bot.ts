@@ -3,6 +3,7 @@ import { faceIndex, isTerminalOrHonor } from '../tiles/tiles';
 import { countsFromFaces, normalShanten, acceptanceCount, type Counts } from '../traditional/hand';
 import type { MeldKind } from '../traditional/engine';
 import type { Rng } from '../tiles/rng';
+import { totalRisk, threatLevel, type OppInfo } from './defense';
 
 /**
  * Bots for the traditional mode.
@@ -20,13 +21,15 @@ import type { Rng } from '../tiles/rng';
  *            minimises shanten (ties broken by acceptance count); claims
  *            only calls that lower shanten or complete the hand.
  *            Limitation: no defensive play, ignores scoring potential.
- *  - hard  : medium's offence plus defence and value awareness —
- *            prefers discarding tiles that are already "safe" (seen in
- *            discards/melds), avoids raw honors/dragon tiles late in the
- *            hand, avoids chi unless it clearly advances the hand, and
- *            keeps concealed hands for the +1 fan when close to ready.
- *            Limitation: still no betaori-style full defence or push/fold
- *            modelling of opponents' danger.
+ *  - hard  : medium's offence plus REAL defence and value awareness —
+ *            per-opponent wait counting (genbutsu/suji/kabe, see ai/defense.ts):
+ *            when an opponent is threatening (riichi / 2+ melds) the discard
+ *            pool widens to best-shanten+1 and the safest tile wins; avoids
+ *            chi unless it clearly advances the hand; keeps concealed hands
+ *            for the +1 fan when close to ready; declares riichi when the
+ *            ruleset allows it and the hand is concealed & tenpai.
+ *            Limitation: no full betaori fold-or-push EV modelling, no
+ *            nakasuji pruning, no opponent-wait enumeration beyond suji/kabe.
  */
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
@@ -42,6 +45,8 @@ export interface BotView {
   otherMeldFaces: TileFace[]; // every seat's exposed melds
   wallCount: number;
   turnNumber: number;
+  /** per-opponent public info for defence (optional; hard difficulty uses it) */
+  opponents?: OppInfo[];
 }
 
 export interface BotCallOptions {
@@ -95,42 +100,46 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
     return rng.nextInt(n);
   }
 
-  // medium & hard: minimise shanten, tie-break by acceptance (and safety on hard)
+  // medium & hard: minimise shanten; hard adds real per-opponent defence
   const base = normalShanten(handCounts(view), view.melds.length);
+  const maxThreat = view.opponents && view.opponents.length > 0
+    ? Math.max(...view.opponents.map(threatLevel))
+    : 0;
+  const defensive = difficulty === 'hard' && maxThreat >= 2;
+
   let best = Infinity;
-  const candidates: number[] = [];
-  const seen = new Set<number>();
+  const bySh: { sh: number; idx: number }[] = [];
   for (let i = 0; i < n; i++) {
-    const fi = faceIndex(view.hand[i]);
-    if (seen.has(fi)) continue;
-    seen.add(fi);
     const sh = shantenAfterDiscard(view, i);
-    if (sh < best) { best = sh; candidates.length = 0; }
-    if (sh === best) candidates.push(i);
+    bySh.push({ sh, idx: i });
+    if (sh < best) best = sh;
   }
-  // tie-break
-  let pick = candidates[0];
-  if (candidates.length > 1) {
-    const used = usedCounts(view);
-    const scored = candidates.map((i) => {
-      const remaining = view.hand.filter((_, k) => k !== i);
-      const acc = acceptanceCount(countsFromFaces(remaining), view.melds.length, used);
-      let safety = 0;
-      if (difficulty === 'hard') {
-        const fi = faceIndex(view.hand[i]);
-        const visible = used[fi];
-        safety = visible * 3; // tiles already out are safer to discard
-        const late = view.wallCount < 40;
-        if (late && isTerminalOrHonor(view.hand[i]) && visible === 0) safety -= 6;
-        if (view.hand[i].suit === 'dragon') safety -= 3;
+  // defensive mode may sacrifice at most 1 shanten to fold toward safety
+  const pool = bySh.filter((e) => e.sh <= best + (defensive ? 1 : 0));
+
+  const used = usedCounts(view);
+  const scored = pool.map(({ idx }) => {
+    const fi = faceIndex(view.hand[idx]);
+    const remaining = view.hand.filter((_, k) => k !== idx);
+    const acc = acceptanceCount(countsFromFaces(remaining), view.melds.length, used);
+    const sh = bySh[idx].sh;
+    let score = acc - sh * 50; // offence first
+    if (difficulty === 'hard') {
+      const visible = used[fi];
+      score += visible * 3; // tiles already out are safer to discard
+      const late = view.wallCount < 40;
+      if (late && isTerminalOrHonor(view.hand[idx]) && visible === 0) score -= 6;
+      if (view.hand[idx].suit === 'dragon') score -= 3;
+      if (view.opponents) {
+        const risk = totalRisk(fi, view.opponents, used);
+        score -= risk * (defensive ? 40 : 4); // defence: real wait counting
       }
-      return { i, score: acc + safety };
-    });
-    scored.sort((a, b) => b.score - a.score);
-    pick = scored[0].i;
-  }
+    }
+    return { idx, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
   void base;
-  return pick;
+  return scored[0].idx;
 }
 
 export function chooseCall(

@@ -10,6 +10,8 @@ import {
   canTsumo,
   canAnkan,
   canAddKong,
+  canRiichi,
+  declareRiichi,
   declareAnkan,
   declareAddedKong,
   declareTsumo,
@@ -17,14 +19,17 @@ import {
   seatWindOf,
   handFaces,
   faceOf,
+  legalDiscards,
   type TradState,
   type Offer,
   type CallDecision,
 } from '../../game-engine/traditional/engine';
-import { HK_DEFAULTS, HK_CHICKEN, rulesSummary } from '../../game-engine/rules/hongkong';
+import { HK_DEFAULTS, HK_CHICKEN } from '../../game-engine/rules/hongkong';
+import { hkRuleset } from '../../game-engine/rules/ruleset';
+import { riichiRuleset } from '../../game-engine/rules/riichi';
 import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
 import { createRng } from '../../game-engine/tiles/rng';
-import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
+import { faceName, faceIndex, type TileFace } from '../../game-engine/tiles/tiles';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { Modal } from '../../components/ui';
 import { sfx } from '../../components/sound';
@@ -43,8 +48,12 @@ function MiniTile({ face }: { face?: TileFace }) {
 export function TraditionalScreen({ settings }: { settings: Settings }) {
   const [, bump] = useReducer((x: number) => x + 1, 0);
   const rules = settings.traditional.rules === 'chicken' ? HK_CHICKEN : { ...HK_DEFAULTS, handsPerMatch: settings.traditional.hands };
+  const ruleset =
+    settings.traditional.rules === 'riichi'
+      ? riichiRuleset({ handsPerMatch: settings.traditional.hands, renchan: true })
+      : hkRuleset(rules);
   const stateRef = useRef<TradState | null>(null);
-  if (stateRef.current === null) stateRef.current = newMatch(rules, Date.now() >>> 0);
+  if (stateRef.current === null) stateRef.current = newMatch(ruleset, Date.now() >>> 0);
   const humanDecisionRef = useRef<CallDecision | null>(null);
   const humanRobRef = useRef<boolean | null>(null);
   const turnCountRef = useRef(0);
@@ -53,6 +62,12 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   const [selectedTile, setSelectedTile] = useState<number | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [matchOverAck, setMatchOverAck] = useState(false);
+
+  const lastRulesRef = useRef(settings.traditional.rules);
+  if (lastRulesRef.current !== settings.traditional.rules) {
+    lastRulesRef.current = settings.traditional.rules;
+    stateRef.current = newMatch(ruleset, Date.now() >>> 0);
+  }
 
   const s = stateRef.current;
   const difficulty: Difficulty = settings.traditional.botDifficulty;
@@ -77,6 +92,15 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
         ),
       wallCount: st.wall.length,
       turnNumber: turnCountRef.current,
+      // per-opponent PUBLIC info only (ponds, open melds, riichi flag)
+      opponents: st.players
+        .filter((p) => p.seat !== seat)
+        .map((p) => ({
+          seat: p.seat,
+          discards: p.discards.map((id) => faceIndex(faceOf(st, id))),
+          meldCount: p.melds.filter((m) => m.kind !== 'ankan').length,
+          riichi: p.riichi,
+        })),
     }),
     []
   );
@@ -136,6 +160,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
         if (canAnkan(st, seat) !== null && Math.random() < 0) {
           /* ankan by bots disabled in v1 (keeps flow simple) */
         }
+        if (difficulty === 'hard' && canRiichi(st, seat)) declareRiichi(st, seat);
         const view = botView(st, seat);
         const i = chooseDiscard(view, difficulty, createRng((st.rngState ^ (turnCountRef.current * 40503)) >>> 0));
         turnCountRef.current += 1;
@@ -221,9 +246,11 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   const canHumanTsumo = humanTurn && canTsumo(s, 0);
   const canHumanAnkan = humanTurn && canAnkan(s, 0) !== null;
   const canHumanAddKong = humanTurn && canAddKong(s, 0) !== null;
+  const canHumanRiichi = humanTurn && canRiichi(s, 0);
+  const myLegal = humanTurn ? new Set(legalDiscards(s, 0)) : new Set<number>();
 
   const doDiscard = (tileId: number) => {
-    if (!humanTurn) return;
+    if (!humanTurn || !myLegal.has(tileId)) return;
     if (discard(s, tileId)) {
       setSelectedTile(null);
       sfx.click();
@@ -243,7 +270,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   };
 
   const newMatchNow = () => {
-    stateRef.current = newMatch(rules, Date.now() >>> 0);
+    stateRef.current = newMatch(ruleset, Date.now() >>> 0);
     humanDecisionRef.current = null;
     humanRobRef.current = null;
     recordedHandRef.current = 0;
@@ -266,6 +293,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
           {p.name}
           <span className="seat-wind">{WIND_PT[seatWindOf(s, seat)]}</span>
           {seat === s.dealer && <span title="Dealer">🎴</span>}
+          {p.riichi && <span className="seat-wind" title="Riichi declarado" style={{ color: '#e5484d' }}>🀄 Riichi</span>}
         </div>
         <div className="row small">
           <span>Mão: {p.hand.length}</span>
@@ -314,10 +342,10 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
       <div className="row-between" style={{ marginBottom: '0.5rem' }}>
         <div>
           <h1 className="page-title" style={{ fontSize: '1.2rem' }}>
-            Mahjong Tradicional — Hong Kong
+            Mahjong Tradicional — {s.ruleset.name}
           </h1>
           <p className="muted small" style={{ margin: 0 }}>
-            Mão {s.handNumber}/{rules.handsPerMatch} · Vento dominante {WIND_PT[s.roundWind]} · Muro {s.wall.length} · Dificuldade {difficulty}
+            Mão {s.handNumber}/{s.ruleset.handsPerMatch} · Vento dominante {WIND_PT[s.roundWind]} · Muro {s.wall.length} · Dificuldade {difficulty}
           </p>
         </div>
         <div className="row">
@@ -364,7 +392,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
                     if (selectedTile === id) doDiscard(id);
                     else setSelectedTile(id);
                   }}
-                  disabled={!humanTurn}
+                  disabled={!humanTurn || !myLegal.has(id)}
                 >
                   <span className="tile-face-inner">
                     <TileFaceArt face={faceOf(s, id)} />
@@ -386,6 +414,11 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
                 {canHumanTsumo && (
                   <button className="btn btn-primary btn-sm" onClick={() => { declareTsumo(s, 0); sfx.win(); bump(); }}>
                     🏆 TSUMO!
+                  </button>
+                )}
+                {canHumanRiichi && !me.riichi && (
+                  <button className="btn btn-primary btn-sm" onClick={() => { declareRiichi(s, 0); sfx.call(); bump(); }}>
+                    🀄 Riichi
                   </button>
                 )}
                 {canHumanAnkan && (
@@ -460,9 +493,9 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
       </div>
 
       {showRules && (
-        <Modal title="Regras — Hong Kong (v1)" onClose={() => setShowRules(false)}>
+        <Modal title={`Regras — ${s.ruleset.name} (v1)`} onClose={() => setShowRules(false)}>
           <ul className="muted" style={{ lineHeight: 1.6 }}>
-            {rulesSummary(rules).map((r, i) => (
+            {s.ruleset.summary().map((r, i) => (
               <li key={i}>{r}</li>
             ))}
             <li>Chamadas: Ron {'>'} Pon/Kong {'>'} Chow (apenas do jogador à esquerda).</li>
