@@ -772,6 +772,12 @@ export function startServer(opts: ServerOptions) {
         return;
       }
 
+      if (t === 'seasonHistory') {
+        // item 9.3: pódio das temporadas encerradas (5 mais recentes)
+        const hist = await store.seasonResults(undefined, 10);
+        send(ws, { t: 'seasonHistory', seasons: hist });
+        return;
+      }
       if (t === 'replayByCode') {
         // item 9.2: assistir replay compartilhado (não exige conta)
         const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';

@@ -4,7 +4,7 @@ import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
 import { ReplayReview } from '../traditional/ReplayReview';
-import { inviteLink, roomFromSearch, copyText, replayLink, replayCodeFromSearch } from './invite';
+import { inviteLink, roomFromSearch, copyText, replayLink, replayCodeFromSearch, monthDaysLeft } from './invite';
 import { t } from '../../i18n';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
@@ -138,6 +138,11 @@ export function OnlineScreen() {
   const [code, setCode] = useState('');
   // item 8.4: convite por link (?sala=CODE) preenche o código
   const [joinCode, setJoinCode] = useState(() => roomFromSearch(window.location.search));
+  /** temporada corrente como YYYY-MM (fallback local p/ o painel) */
+  const seasonHint = () => {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  };
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.token'));
   const [accountToken, setAccountToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.accountToken'));
   const [accountName, setAccountName] = useState(() => sessionStorage.getItem('umo.online.accountName') || '');
@@ -170,6 +175,8 @@ export function OnlineScreen() {
   const [lastReplayCode, setLastReplayCode] = useState<string | null>(null);
   const [watchCode, setWatchCode] = useState('');
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
+  // item 9.3: pódio das temporadas encerradas
+  const [seasonHist, setSeasonHist] = useState<{ season: string; rows: { username: string; elo: number; rankedPlayed: number; rankedWins: number }[] }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [actions, setActions] = useState<MyActions>({ legal: [], canTsumo: false, canRiichi: false });
@@ -248,6 +255,10 @@ export function OnlineScreen() {
       }
       if (msg.t === 'history') {
         setHist((msg.rows ?? []) as typeof hist);
+        return;
+      }
+      if (msg.t === 'seasonHistory') {
+        setSeasonHist((msg.seasons ?? []) as typeof seasonHist);
         return;
       }
       if (msg.t === 'replayCode' && msg.code) {
@@ -491,6 +502,46 @@ export function OnlineScreen() {
             rows={hist}
             onReview={(playedAt) => connect({ t: 'replay', accountToken, playedAt })}
           />
+        )}
+        {leader && leader.length > 0 && (
+          <div className="panel" style={{ marginTop: 8 }}>
+            <h3 className="panel-title">
+              🎖️ {t('on.seasonPanel', { season: leaderSeason ?? seasonHint() })}
+            </h3>
+            {monthDaysLeft() <= 7 && (
+              <p className="muted small" style={{ color: '#ffd28a' }}>
+                ⏳ {t('on.seasonEnding', { n: monthDaysLeft() })}
+              </p>
+            )}
+            <div className="row" style={{ gap: 10 }}>
+              {leader.slice(0, 3).map((r, i) => (
+                <span key={r.username} className="small">
+                  {['🥇', '🥈', '🥉'][i]} <b>{r.username}</b> ⭐ {r.elo}
+                </span>
+              ))}
+            </div>
+            <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => connect({ t: 'seasonHistory' })}>
+              🏛 {t('on.pastSeasons')}
+            </button>
+            {seasonHist && (
+              seasonHist.length === 0 ? (
+                <p className="muted small" style={{ marginTop: 4 }}>{t('on.noPastSeasons')}</p>
+              ) : (
+                seasonHist.map((sh) => (
+                  <div key={sh.season} style={{ marginTop: 6 }}>
+                    <b className="small">{t('on.season')} {sh.season}</b>
+                    <ul className="muted small" style={{ margin: '2px 0 0 16px' }}>
+                      {sh.rows.slice(0, 3).map((r, i) => (
+                        <li key={r.username}>
+                          {['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`} {r.username} — ⭐ {r.elo} ({r.rankedWins}/{r.rankedPlayed})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )
+            )}
+          </div>
         )}
         {replayView && (
           <ReplayReview

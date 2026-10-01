@@ -300,4 +300,8 @@ export const pt: Record<string, string> = {
   'trad.importFailed': 'JSON de replay inválido.',
   'err.replayCodeInvalid': 'Código de replay inválido.',
   'err.replayNotFound': 'Replay não encontrado.',
+  'on.seasonPanel': 'Pódio da Temporada {season}',
+  'on.seasonEnding': 'A temporada encerra em {n} dia(s) — no mês seguinte o Elo volta a 1500 e o placar é arquivado.',
+  'on.pastSeasons': 'Temporadas anteriores',
+  'on.noPastSeasons': 'Nenhuma temporada encerrada ainda.',
 };

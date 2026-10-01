@@ -113,6 +113,8 @@ export interface RoomStore {
   /** replays compartilháveis por código (item 9.2) */
   saveReplay(code: string, payload: ReplayPayload): Promise<void>;
   getReplay(code: string): Promise<ReplayPayload | null>;
+  /** temporadas encerradas (item 9.3): arquiva o placar e consulta o histórico */
+  seasonResults(season?: string, limit?: number): Promise<{ season: string; rows: LeaderRow[] }[]>;
   leaderboard(limit?: number): Promise<LeaderRow[]>;
   close(): Promise<void>;
 }
@@ -190,6 +192,15 @@ export class MemoryStore implements RoomStore {
     // virada de temporada (item 8.1): arquiva o Elo anterior e volta a 1500
     const seas = season ?? seasonKey();
     if (a.season && a.season !== seas) {
+      // item 9.3: arquiva o placar final da temporada que encerrou
+      this.seasonArchive.push({
+        season: a.season,
+        username: a.username,
+        elo: a.elo,
+        rankedPlayed: a.rankedPlayed,
+        rankedWins: a.rankedWins,
+        archivedAt: Date.now(),
+      });
       a.prevSeason = a.season;
       a.prevElo = a.elo;
       a.elo = 1500;
@@ -215,6 +226,21 @@ export class MemoryStore implements RoomStore {
   }
   async historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null> {
     return (this.historyRows.get(accountId) ?? []).find((r) => r.playedAt === playedAt) ?? null;
+  }
+  private seasonArchive: { season: string; username: string; elo: number; rankedPlayed: number; rankedWins: number; archivedAt: number }[] = [];
+  async seasonResults(season?: string, limit = 10): Promise<{ season: string; rows: LeaderRow[] }[]> {
+    const seasons = [...new Set(this.seasonArchive.map((r) => r.season))].sort().reverse();
+    const wanted = season ? [season] : seasons.slice(0, 5);
+    return wanted
+      .filter((s) => seasons.includes(s))
+      .map((s) => ({
+        season: s,
+        rows: this.seasonArchive
+          .filter((r) => r.season === s)
+          .sort((x, y) => y.elo - x.elo || y.rankedPlayed - x.rankedPlayed)
+          .slice(0, limit)
+          .map((r) => ({ username: r.username, elo: r.elo, rankedPlayed: r.rankedPlayed, rankedWins: r.rankedWins, rankedPoints: 0 })),
+      }));
   }
   private replays = new Map<string, ReplayPayload>();
   async saveReplay(code: string, payload: ReplayPayload): Promise<void> {
@@ -337,6 +363,15 @@ export class PostgresStore implements RoomStore {
 
   async recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number, season?: string): Promise<void> {
     const seas = season ?? seasonKey();
+    // item 9.3: se a conta está em temporada antiga, arquiva o placar final antes do reset
+    await this.pool.query(
+      `INSERT INTO season_results (season, username, elo, ranked_played, ranked_wins, archived_at)
+       SELECT season, username, elo, ranked_played, ranked_wins, $2
+       FROM accounts
+       WHERE id = $1 AND season IS NOT NULL AND season <> $3
+       ON CONFLICT (season, username) DO NOTHING`,
+      [accountId, Date.now(), seas]
+    );
     // virada de temporada (item 8.1): arquiva Elo e reinicia em 1500
     await this.pool.query(
       `UPDATE accounts SET
@@ -404,6 +439,38 @@ export class PostgresStore implements RoomStore {
       season: (r.season as string | null) ?? undefined,
       replay,
     };
+  }
+
+  async seasonResults(season?: string, limit = 10): Promise<{ season: string; rows: LeaderRow[] }[]> {
+    let seasons: string[];
+    if (season) {
+      seasons = [season];
+    } else {
+      const res = await this.pool.query(
+        `SELECT DISTINCT season FROM season_results ORDER BY season DESC LIMIT 5`
+      );
+      seasons = res.rows.map((r) => r.season as string);
+    }
+    const out: { season: string; rows: LeaderRow[] }[] = [];
+    for (const s of seasons) {
+      const res = await this.pool.query(
+        `SELECT username, elo, ranked_played, ranked_wins
+         FROM season_results WHERE season = $1
+         ORDER BY elo DESC, ranked_played DESC LIMIT $2`,
+        [s, limit]
+      );
+      out.push({
+        season: s,
+        rows: res.rows.map((r) => ({
+          username: r.username as string,
+          elo: r.elo as number,
+          rankedPlayed: r.ranked_played as number,
+          rankedWins: r.ranked_wins as number,
+          rankedPoints: 0,
+        })),
+      });
+    }
+    return out;
   }
 
   async saveReplay(code: string, payload: ReplayPayload): Promise<void> {

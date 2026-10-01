@@ -58,3 +58,9 @@ export function replayLink(base: string, code: string): string {
 export function replayCodeFromSearch(search: string): string {
   return new URLSearchParams(search).get('replay') ?? '';
 }
+
+/** dias restantes do mês corrente (UTC) — usado no aviso de fim de temporada (item 9.3) */
+export function monthDaysLeft(d: Date = new Date()): number {
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  return lastDay - d.getUTCDate();
+}

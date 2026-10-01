@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { inviteLink, roomFromSearch, replayLink, replayCodeFromSearch } from '../features/online/invite';
+import { inviteLink, roomFromSearch, replayLink, replayCodeFromSearch, monthDaysLeft } from '../features/online/invite';
 import { exportReplay, parseReplay } from '../features/traditional/replayIO';
 
 describe('item 8d — convite por link', () => {
@@ -35,6 +35,14 @@ describe('item 8d — convite por link', () => {
     );
     expect(replayCodeFromSearch('?replay=A7K2X9')).toBe('A7K2X9');
     expect(replayCodeFromSearch('')).toBe('');
+  });
+});
+
+describe('item 9c — painel da temporada', () => {
+  it('monthDaysLeft: dias até o fim do mês (UTC)', () => {
+    expect(monthDaysLeft(new Date(Date.UTC(2026, 0, 31)))).toBe(0);
+    expect(monthDaysLeft(new Date(Date.UTC(2026, 0, 25)))).toBe(6);
+    expect(monthDaysLeft(new Date(Date.UTC(2026, 1, 1)))).toBe(27); // fev 2026 tem 28 dias
   });
 });
 

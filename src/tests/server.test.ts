@@ -43,6 +43,8 @@ interface Snap {
   prevElo?: number | null;
   /** resposta do fetch de replay (item 8.3) */
   replay?: { rulesetId: string; seed: number; actions: unknown[] };
+  /** temporadas encerradas (item 9.3) */
+  seasons?: { season: string; rows: { username: string; elo: number; rankedPlayed: number; rankedWins: number }[] }[];
   text?: string;
   emote?: string;
   rows?: {
@@ -601,6 +603,10 @@ describe('item 6a — Elo + leaderboard', () => {
       })();
       expect(Number(shared.replay!.seed)).toBe(Number(rep.replay!.seed));
       expect(shared.replay!.actions.length).toBe(rep.replay!.actions.length);
+      // item 9.3: histórico de temporadas responde (vazio na primeira temporada)
+      L.ws.send(JSON.stringify({ t: 'seasonHistory' }));
+      const sh = await L.next((m) => m.t === 'seasonHistory', 15000, 'seasonHistory');
+      expect(Array.isArray(sh.seasons)).toBe(true);
       L.ws.close();
     } finally {
       await server.close();
@@ -664,6 +670,11 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(rp?.rulesetId).toBe('mcr');
       expect(rp?.seed).toBe(123);
       expect(await c.getReplay('XXXX00')).toBeNull();
+      // temporada arquivada (item 9.3): 2020-01 terminou com 1620
+      const hist = await c.seasonResults(undefined, 10);
+      expect(hist.some((h) => h.season === '2020-01')).toBe(true);
+      const pod = hist.find((h) => h.season === '2020-01')!;
+      expect(pod.rows[0].elo).toBe(1620);
       await c.close();
     } catch {
       ok = false;
@@ -938,6 +949,12 @@ describe('item 8a — temporadas ranqueadas', () => {
     const rows = await st.leaderboard(10);
     expect(rows[0].prevSeason).toBe('2020-01');
     expect(rows[0].prevElo).toBe(1700);
+    // item 9.3: o placar da temporada encerrada foi arquivado
+    const hist = await st.seasonResults(undefined, 10);
+    expect(hist.length).toBe(1);
+    expect(hist[0].season).toBe('2020-01');
+    expect(hist[0].rows[0].elo).toBe(1700);
+    expect(hist[0].rows[0].username).toBe('season-tester');
   });
 });
 
