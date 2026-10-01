@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { chooseDiscard, shouldDeclareRiichi, mcrExpectedFan, mcrRolloutEv, type BotView } from '../game-engine/ai/bot';
+import { chooseDiscard, shouldDeclareRiichi, mcrExpectedFan, mcrRolloutEv, rolloutBudget, type BotView } from '../game-engine/ai/bot';
+import { dealInEv } from '../game-engine/ai/defense';
 import { totalRisk } from '../game-engine/ai/defense';
 import { countsFromFaces, faceIndexFor, type TileFace } from './botTestUtils';
 import { createRng } from '../game-engine/tiles/rng';
@@ -152,6 +153,34 @@ describe('item 9e — bot hard: betaori total, valor no riichi e MCR', () => {
     const t0 = Date.now();
     for (let i = 0; i < 5; i++) chooseDiscard(view, 'hard', createRng(i + 1));
     expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
+  it('item 12.1: orçamento adaptativo do rollout', () => {
+    expect(rolloutBudget(3, 70)).toEqual({ samples: 12, horizon: 8 }); // longe, muro cheio
+    expect(rolloutBudget(1, 70)).toEqual({ samples: 20, horizon: 10 }); // perto de fechar
+    expect(rolloutBudget(3, 30)).toEqual({ samples: 20, horizon: 6 }); // fim de muro
+    expect(rolloutBudget(0, 20)).toEqual({ samples: 32, horizon: 6 }); // tenpai no fim
+  });
+
+  it('item 12.1: EV de deal-in pondera o valor da mão do oponente', () => {
+    // 5 de pinos alimentando uma espera 4-6 contra oponente fechado vs riichi
+    const tile = faceIndexFor(f('pin', 5));
+    const mk = (riichi: boolean, meldCount: number) => ({
+      seat: 1,
+      discards: [faceIndexFor(f('man', 1)), faceIndexFor(f('sou', 9))],
+      meldCount,
+      riichi,
+    });
+    const used = countsFromFaces([]);
+    const evClosed = dealInEv(tile, [mk(false, 0)], used);
+    const evOpen = dealInEv(tile, [mk(false, 3)], used);
+    const evRiichi = dealInEv(tile, [mk(true, 1)], used);
+    expect(evClosed).toBeGreaterThan(0);
+    expect(evOpen).toBeGreaterThan(evClosed);
+    expect(evRiichi).toBeGreaterThan(evOpen);
+    // genbutsu (oponente já descartou a peça) → EV zero
+    const genbutsu = { seat: 1, discards: [tile], meldCount: 0, riichi: true };
+    expect(dealInEv(tile, [genbutsu], used)).toBe(0);
   });
 
 });

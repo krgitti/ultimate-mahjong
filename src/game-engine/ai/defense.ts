@@ -107,3 +107,22 @@ export function totalRisk(tile: number, opponents: OppInfo[], visible: Counts): 
   for (const opp of opponents) total += dangerScore(tile, opp, visible) * threatLevel(opp);
   return total;
 }
+
+/**
+ * item 12.1: EV de deal-in — número de esperas alimentadas (dangerScore)
+ * ponderado pelo valor estimado da mão de cada oponente: declarante de
+ * riichi vale mais (yaku garantido + ura possível), mão aberta com 3+
+ * chamadas vale mais que fechada sem declaração. O fator 0.5 é a
+ * calibração espera→probabilidade aproximada de deal-in.
+ * Unidade: "pontos / 2000" (1 ≈ 2000 pontos de perda esperada).
+ */
+export function dealInEv(tile: number, opps: OppInfo[], visible: Counts): number {
+  let ev = 0;
+  for (const o of opps) {
+    const d = dangerScore(tile, o, visible);
+    if (d === 0) continue;
+    const value = o.riichi ? 4 : o.meldCount >= 3 ? 2 : 1;
+    ev += d * value * 0.5;
+  }
+  return ev;
+}

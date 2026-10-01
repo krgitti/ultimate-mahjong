@@ -3,7 +3,7 @@ import { faceIndex, indexToFace, isTerminalOrHonor } from '../tiles/tiles';
 import { countsFromFaces, normalShanten, acceptanceCount, winningWaits, type Counts } from '../traditional/hand';
 import type { MeldKind } from '../traditional/engine';
 import type { Rng } from '../tiles/rng';
-import { totalRisk, threatLevel, type OppInfo } from './defense';
+import { totalRisk, threatLevel, dealInEv, type OppInfo } from './defense';
 import { knittedShanten } from './knitted';
 
 /**
@@ -104,6 +104,19 @@ function shantenAfterDiscard(view: BotView, i: number): number {
  * devolve o fan esperado médio de fechar a mão dentro do horizonte.
  * Custo controlado: usado só para desempatar os melhores candidatos.
  */
+/**
+ * item 12.1: orçamento adaptativo do rollout — mãos perto de fechar e fins
+ * de muro merecem mais amostras; horizonte curto quando o muro está baixo.
+ */
+export function rolloutBudget(baseShanten: number, wallCount: number): { samples: number; horizon: number } {
+  const near = baseShanten <= 1;
+  const late = wallCount < 40;
+  return {
+    samples: near && late ? 32 : near || late ? 20 : 12,
+    horizon: late ? 6 : near ? 10 : 8,
+  };
+}
+
 export function mcrRolloutEv(
   hand13: TileFace[],
   usedCounts: Counts,
@@ -254,8 +267,9 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
       if (late && isTerminalOrHonor(view.hand[idx]) && visible === 0) score -= 6;
       if (view.hand[idx].suit === 'dragon') score -= 3;
       if (opps.length > 0) {
-        const risk = totalRisk(fi, opps, used);
-        score -= risk * (push ? 1 : defensive ? 40 : 4); // pressur ~ ignores risk
+        // item 12.1: perda esperada ponderada pelo valor da mão do oponente
+        const ev = dealInEv(fi, opps, used);
+        score -= ev * (push ? 1 : defensive ? 20 : 4); // pressur ~ ignores risk
       }
       // item 10.3: MCR escolhe descarte por fan esperado (não só shanten)
       if (view.rulesetId === 'mcr') score += mcrExpectedFan(remaining);
@@ -266,10 +280,11 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
   // melhores candidatos pelo fan esperado de fechar a mão
   if (difficulty === 'hard' && view.rulesetId === 'mcr' && !fold && scored.length > 1) {
     const used2 = usedCounts(view);
+    const budget = rolloutBudget(base, view.wallCount);
     const prelim = [...scored].sort((a, b) => b.score - a.score).slice(0, 3);
     for (const cand of prelim) {
       const remaining = view.hand.filter((_, k) => k !== cand.idx);
-      cand.score += 0.8 * mcrRolloutEv(remaining, used2, rng);
+      cand.score += 0.8 * mcrRolloutEv(remaining, used2, rng, budget.samples, budget.horizon);
     }
   }
   scored.sort((a, b) => b.score - a.score);
