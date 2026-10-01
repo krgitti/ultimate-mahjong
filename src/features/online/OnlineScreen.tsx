@@ -693,6 +693,26 @@ export function OnlineScreen() {
   const myOffers = v.offers.filter((o) => o.seat === mySeat);
   const humanTurn = v.phase === 'discard' && v.current === mySeat;
 
+  // item 9.7: navegação por teclado na mão (setas + Enter)
+  const handSorted = [...myHand].sort((a, b) => a.id - b.id);
+  const onHandKey = (e: React.KeyboardEvent) => {
+    const opts = humanTurn ? handSorted.filter((h) => actions.legal.includes(h.id)) : [];
+    if (opts.length === 0) return;
+    const i = selected == null ? -1 : opts.findIndex((h) => h.id === selected);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const next = e.key === 'ArrowRight'
+        ? opts[i < 0 ? 0 : (i + 1) % opts.length]
+        : opts[i < 0 ? opts.length - 1 : (i - 1 + opts.length) % opts.length];
+      setSelected(next.id);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (selected != null && actions.legal.includes(selected)) {
+        e.preventDefault();
+        doDiscard(selected);
+      }
+    }
+  };
+
   return (
     <div>
       <div className="row-between" style={{ marginBottom: '0.5rem' }}>
@@ -749,8 +769,13 @@ export function OnlineScreen() {
             <div className="seat-name">{v.players[mySeat]?.name} (você)</div>
             <div className="row small"><span>Pontos: <b>{v.players[mySeat]?.score}</b></span></div>
           </div>
-          <div className="hand-row" role="list" aria-label="Sua mão">
-            {[...myHand].sort((a, b) => a.id - b.id).map(({ id, face }) => (
+          <div
+            className="hand-row"
+            role="list"
+            aria-label="Sua mão — use as setas para percorrer e Enter para descartar"
+            onKeyDown={onHandKey}
+          >
+            {handSorted.map(({ id, face }) => (
               <button
                 key={id}
                 role="listitem"

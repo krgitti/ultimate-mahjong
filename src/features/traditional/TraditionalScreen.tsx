@@ -297,6 +297,25 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
     return null;
   }, [s]);
   const humanTurn = s.phase === 'discard' && s.current === 0;
+
+  // item 9.7: navegação por teclado na mão (setas + Enter)
+  const onHandKey = (e: React.KeyboardEvent) => {
+    const opts = sortedHand.filter((id) => humanTurn && myLegal.has(id));
+    if (opts.length === 0) return;
+    const i = selectedTile == null ? -1 : opts.indexOf(selectedTile);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const next = e.key === 'ArrowRight'
+        ? opts[i < 0 ? 0 : (i + 1) % opts.length]
+        : opts[i < 0 ? opts.length - 1 : (i - 1 + opts.length) % opts.length];
+      setSelectedTile(next);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      if (selectedTile != null && myLegal.has(selectedTile)) {
+        e.preventDefault();
+        doDiscard(selectedTile);
+      }
+    }
+  };
   const canHumanTsumo = humanTurn && canTsumo(s, 0);
   const canHumanAnkan = humanTurn && canAnkan(s, 0) !== null;
   const canHumanAddKong = humanTurn && canAddKong(s, 0) !== null;
@@ -518,7 +537,12 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
               )}
             </div>
           )}
-          <div className="hand-row" role="list" aria-label="Sua mão">
+          <div
+            className="hand-row"
+            role="list"
+            aria-label="Sua mão — use as setas para percorrer e Enter para descartar"
+            onKeyDown={onHandKey}
+          >
             {sortedHand.map((id) => {
               const isDrawn = id === s.drawnTile;
               return (

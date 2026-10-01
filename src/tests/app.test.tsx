@@ -187,3 +187,34 @@ describe('app: error resilience', () => {
 });
 
 vi.setConfig({ testTimeout: 20000 });
+
+describe('item 9.7 — acessibilidade da mesa (teclado)', () => {
+  it('setas selecionam peças e Enter descarta (tradicional)', async () => {
+    window.location.hash = '#traditional';
+    render(<App />);
+    // humano é o dealer (Sul): mão com 14 peças e vez dele
+    const row = await waitFor(
+      () => {
+        const el = document.querySelector('.hand-row');
+        expect(el).toBeTruthy();
+        expect(document.querySelectorAll('.hand-tile').length).toBe(14);
+        return el as Element;
+      },
+      { timeout: 5000 }
+    );
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    expect(document.querySelector('.hand-tile.selected')).toBeTruthy();
+    fireEvent.keyDown(row, { key: 'ArrowLeft' });
+    fireEvent.keyDown(row, { key: 'ArrowRight' });
+    expect(document.querySelector('.hand-tile.selected')).toBeTruthy();
+    fireEvent.keyDown(row, { key: 'Enter' });
+    // descarte efetuado: a mão volta a 13 e a peça aparece no rio
+    await waitFor(
+      () => {
+        expect(document.querySelectorAll('.hand-tile').length).toBe(13);
+      },
+      { timeout: 5000 }
+    );
+    expect(document.querySelectorAll('.pond .mini-tile:not(.back)').length).toBeGreaterThan(0);
+  });
+});
