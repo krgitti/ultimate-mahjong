@@ -643,6 +643,16 @@ export function startServer(opts: ServerOptions) {
     }
 
     if (s.phase === 'calls-rob') {
+      // item 10.1: mesmo timeout do calls — sem ele, um humano que não
+      // responde (ou caiu em sala casual) trava a mesa para sempre.
+      const humansPending = room.state.offers.some(
+        (o) => room.seats[o.seat] && room.seats[o.seat]!.connected && !room.pendingRob.has(o.seat)
+      );
+      if (humansPending) {
+        if (Date.now() - room.callWaitingSince > 30000) {
+          for (const o of room.state.offers) if (!room.pendingRob.has(o.seat)) room.pendingRob.set(o.seat, false);
+        } else return;
+      }
       const res = resolveRob(s, (seat) => {
         if (room.seats[seat] && !isAway(room, seat)) {
           const d = room.pendingRob.get(seat);
