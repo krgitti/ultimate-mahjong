@@ -31,6 +31,13 @@ import {
   CAMPAIGN,
 } from '../../storage/profile';
 import { BoardView } from './BoardView';
+import {
+  exportSolitaireReplay,
+  parseSolitaireReplay,
+  replayAt,
+  type SolitaireReplay,
+} from './replay';
+import type { MatchMode } from '../../game-engine/tiles/tiles';
 import { Modal, fmtTime, useToast } from '../../components/ui';
 import { sfx } from '../../components/sound';
 
@@ -65,6 +72,12 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
   const initialFacesRef = useRef<TileFace[]>([]);
   const hintTimerRef = useRef<number | null>(null);
   const recordedRef = useRef(false);
+  // item 10.2: gravação da partida atual para replay
+  const recMovesRef = useRef<[number, number][]>([]);
+  const recValidRef = useRef(true);
+  const recMetaRef = useRef<{ layoutId: string; seed: number; matchMode: MatchMode; faces: [string, number][] } | null>(null);
+  const [replay, setReplay] = useState<{ rec: SolitaireReplay; idx: number; playing: boolean; speed: number } | null>(null);
+  const replayFileRef = useRef<HTMLInputElement | null>(null);
 
   const activeLaunch = launch;
 
@@ -94,6 +107,15 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
         });
         initialFacesRef.current = st.tiles.map((t) => ({ ...t.face }));
         recordedRef.current = false;
+        recMetaRef.current = {
+          layoutId,
+          seed,
+          matchMode: settings.solitaire.matchMode,
+          faces: st.tiles.map((t) => [t.face.suit, t.face.rank] as [string, number]),
+        };
+        recMovesRef.current = [];
+        recValidRef.current = true;
+        setReplay(null);
         setTimeUp(false);
         setSelectedId(null);
         setHintIds([]);
@@ -129,6 +151,20 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
     if (saved) {
       try {
         const st = deserializeSolitaire(saved.json);
+        // item 10.2: restaurada sem jogadas (recém-distribuída) ainda pode
+        // gravar replay; com jogadas, as faces iniciais são desconhecidas
+        if (st.moves === 0) {
+          recMetaRef.current = {
+            layoutId: st.layoutId,
+            seed: st.seed,
+            matchMode: st.matchMode,
+            faces: st.tiles.map((t) => [t.face.suit, t.face.rank] as [string, number]),
+          };
+          recMovesRef.current = [];
+          recValidRef.current = true;
+        } else {
+          recValidRef.current = false;
+        }
         initialFacesRef.current = st.tiles.map((t) => ({ ...t.face }));
         recordedRef.current = false;
         setGame(st);
@@ -233,6 +269,7 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
     }
     const res = attemptPair(game, selectedId, t.id);
     if (res.ok) {
+      if (recValidRef.current) recMovesRef.current.push([selectedId, t.id]);
       sfx.match();
       setRemovingIds([selectedId, t.id]);
       window.setTimeout(() => setRemovingIds([]), 280);
@@ -284,6 +321,7 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
     shuffleRemaining(game, pool);
+    recValidRef.current = false; // o embaralhamento quebra a reprodutibilidade do replay
     setSelectedId(null);
     setHintIds([]);
     toast('Peças restantes embaralhadas.');
@@ -294,6 +332,7 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
   const doUndo = useCallback(() => {
     if (!game) return;
     undo(game);
+    recValidRef.current = false;
     setSelectedId(null);
     sfx.click();
     bump();
@@ -302,6 +341,7 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
   const doRedo = useCallback(() => {
     if (!game) return;
     redo(game);
+    recValidRef.current = false;
     setSelectedId(null);
     sfx.click();
     bump();
@@ -311,11 +351,53 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
     if (!game) return;
     restart(game, initialFacesRef.current);
     recordedRef.current = false;
+    recMovesRef.current = [];
+    recValidRef.current = true;
     setTimeUp(false);
     setSelectedId(null);
     toast('Partida reiniciada com as mesmas peças.');
     bump();
   }, [game, toast]);
+
+  /* ---------- item 10.2: replay (exportar / assistir) ---------- */
+  const exportReplayClick = useCallback(() => {
+    const meta = recMetaRef.current;
+    if (!meta || !recValidRef.current || recMovesRef.current.length === 0) return;
+    const rec: SolitaireReplay = { ...meta, moves: [...recMovesRef.current] };
+    const blob = new Blob([exportSolitaireReplay(rec)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `solitaire-${meta.layoutId}-${meta.seed}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, []);
+
+  const onReplayFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      e.target.value = '';
+      if (!f) return;
+      const rec = parseSolitaireReplay(await f.text());
+      if (!rec || !replayAt(rec, 0)) {
+        toast('Replay inválido (formato, jogadas ou layout desconhecido).', true);
+        return;
+      }
+      setReplay({ rec, idx: 0, playing: false, speed: 1 });
+    },
+    [toast]
+  );
+
+  useEffect(() => {
+    if (!replay?.playing) return;
+    const id = window.setInterval(() => {
+      setReplay((r) => {
+        if (!r) return r;
+        if (r.idx >= r.rec.moves.length) return { ...r, playing: false };
+        return { ...r, idx: r.idx + 1 };
+      });
+    }, 800 / replay.speed);
+    return () => window.clearInterval(id);
+  }, [replay?.playing, replay?.speed]);
 
   /* keyboard shortcuts */
   useEffect(() => {
@@ -346,6 +428,57 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.layoutId]);
 
+  const replayState = useMemo(() => (replay ? replayAt(replay.rec, replay.idx) : null), [replay]);
+
+  if (replay) {
+    if (!replayState) {
+      return (
+        <div className="solitaire-screen">
+          <div className="panel">
+            <p>Não foi possível reconstruir este replay (jogada ilegal ou layout indisponível).</p>
+            <button className="btn" onClick={() => setReplay(null)}>✕ Sair do replay</button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="solitaire-screen">
+        <div className="sol-toolbar" role="toolbar" aria-label="Controles do replay">
+          <button className="btn btn-sm" title="Voltar ao início" onClick={() => setReplay((r) => (r ? { ...r, idx: 0, playing: false } : r))}>⏮</button>
+          <button className="btn btn-sm" title="Jogada anterior" disabled={replay.idx === 0} onClick={() => setReplay((r) => (r ? { ...r, idx: Math.max(0, r.idx - 1), playing: false } : r))}>◀</button>
+          <button
+            className="btn btn-sm"
+            onClick={() => setReplay((r) => (r ? { ...r, playing: !r.playing && r.idx < r.rec.moves.length } : r))}
+          >
+            {replay.playing ? '⏸ Pausar' : '▶ Reproduzir'}
+          </button>
+          <button className="btn btn-sm" title="Próxima jogada" disabled={replay.idx >= replay.rec.moves.length} onClick={() => setReplay((r) => (r ? { ...r, idx: Math.min(r.rec.moves.length, r.idx + 1), playing: false } : r))}>⏭</button>
+          <label className="muted small">
+            Velocidade{' '}
+            <select value={replay.speed} onChange={(e) => setReplay((r) => (r ? { ...r, speed: Number(e.target.value) } : r))}>
+              <option value={0.5}>0,5×</option>
+              <option value={1}>1×</option>
+              <option value={2}>2×</option>
+              <option value={4}>4×</option>
+            </select>
+          </label>
+          <span className="muted small" aria-live="polite">
+            Jogada {replay.idx}/{replay.rec.moves.length} · {replay.rec.layoutId} · seed {replay.rec.seed}
+          </span>
+          <button className="btn btn-sm" onClick={() => setReplay(null)}>✕ Sair do replay</button>
+        </div>
+        <BoardView
+          state={replayState}
+          selectedId={null}
+          hintIds={[]}
+          removingIds={[]}
+          shakeId={null}
+          onTileClick={() => undefined}
+        />
+      </div>
+    );
+  }
+
   if (!game) return <p className="muted">Gerando tabuleiro…</p>;
 
   const remaining = remainingCount(game);
@@ -366,6 +499,24 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
         <button className="btn btn-sm" onClick={doHint} title={`${t('sol.hint')} (H)`}>💡 {t('sol.hint')}</button>
         <button className="btn btn-sm" onClick={doShuffle} title={`${t('sol.shuffle')} (S)`}>🔀 {t('sol.shuffle')}</button>
         <button className="btn btn-sm" onClick={doRestart} title="Reiniciar com as mesmas peças">⟳ Reiniciar</button>
+        <button
+          className="btn btn-sm"
+          onClick={exportReplayClick}
+          disabled={!recValidRef.current || recMovesRef.current.length === 0}
+          title="Baixar esta partida como replay .json"
+        >
+          ⬇ Replay
+        </button>
+        <button className="btn btn-sm" onClick={() => replayFileRef.current?.click()} title="Abrir um replay .json para assistir">
+          📼 Assistir
+        </button>
+        <input
+          ref={replayFileRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: 'none' }}
+          onChange={onReplayFile}
+        />
         <div className="sol-status" aria-live="polite">
           <span>{t('sol.pairs')} <b>{pairsLeft}</b></span>
           <span>Pontos: <b>{game.score}</b></span>

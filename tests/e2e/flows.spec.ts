@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import fs from 'fs';
 
 test.describe('Ultimate Mahjong Online — essential flows', () => {
   test('home renders and navigation works', async ({ page }) => {
@@ -35,6 +36,48 @@ test.describe('Ultimate Mahjong Online — essential flows', () => {
     // undo restores
     await page.getByTitle(/Desfazer/).click();
     await expect(page.locator('button[data-tile-id]')).toHaveCount(144);
+  });
+
+  test('solitaire: exportar e assistir replay (item 10.2)', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: /Jogar Solitaire/ }).click();
+    await expect(page.locator('button[data-tile-id]')).toHaveCount(144, { timeout: 20000 });
+
+    // joga 2 pares com a dica
+    for (let i = 0; i < 2; i++) {
+      await page.getByTitle(/Dica/).click();
+      const ids = await page
+        .locator('button.hint-glow')
+        .evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.tileId));
+      await page.locator(`button[data-tile-id="${ids[0]}"]`).click();
+      await page.locator(`button[data-tile-id="${ids[1]}"]`).click();
+    }
+    await expect(page.getByText('Pares:')).toContainText('70');
+
+    // exporta o replay (.json baixado)
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /⬇ Replay/ }).click(),
+    ]);
+    const file = '/tmp/sol-replay.json';
+    await download.saveAs(file);
+    const json = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    expect(json.format).toBe('umo-replay-v1');
+    expect(json.rulesetId).toBe('solitaire');
+    expect(json.moves).toHaveLength(2);
+
+    // assiste: tabuleiro reconstruído (144 peças) e passo a passo até o fim
+    await page.getByRole('button', { name: /Assistir/ }).click();
+    await page.locator('input[type=file]').setInputFiles(file);
+    await expect(page.getByText(/Jogada 0\/2/)).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('button[data-tile-id]')).toHaveCount(144);
+    await page.getByRole('button', { name: '⏭' }).click();
+    await page.getByRole('button', { name: '⏭' }).click();
+    await expect(page.getByText(/Jogada 2\/2/)).toBeVisible();
+    await expect(page.locator('button[data-tile-id]')).toHaveCount(140);
+    // sair volta ao jogo ao vivo, intacto
+    await page.getByRole('button', { name: /Sair do replay/ }).click();
+    await expect(page.getByText('Pares:')).toContainText('70');
   });
 
   test('traditional: hand starts, human discards, event log records it', async ({ page }) => {
