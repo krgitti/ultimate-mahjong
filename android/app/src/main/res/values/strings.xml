@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ultimate Mahjong</string>
+    <string name="title_activity_main">Ultimate Mahjong</string>
+    <string name="package_name">com.krgitti.ultimatemahjong</string>
+    <string name="custom_url_scheme">com.krgitti.ultimatemahjong</string>
+</resources>

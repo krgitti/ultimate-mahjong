@@ -410,6 +410,44 @@ docker run --rm -e UMO_DATABASE_URL=... ultimate-mahjong-server npx tsx server/m
 O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 (a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
 
+## O que ficou pronto nesta rodada (pedido 12)
+
+- **12.1 Bot mais fundo**: orçamento adaptativo do rollout MCR
+  (`rolloutBudget`: 12×8 base, 20×10 perto de fechar, 20×6 fim de muro,
+  32×6 tenpai no fim) e defesa ponderada por EV de deal-in (`dealInEv` em
+  `ai/defense.ts`: esperas alimentadas × valor estimado da mão do oponente —
+  riichi > mão aberta 3+ > fechada), mantendo o betaori/genbutsu intacto.
+- **12.2 Pódio da temporada por variante**: a virada arquiva uma linha por
+  variante em `season_results` (migração `010`), `seasonHistory` aceita
+  `ruleset` e o painel da temporada alterna HK/Riichi/MCR.
+- **12.3 Replay do tradicional offline no celular**: botão 💾 baixa a partida
+  contra bots como `umo-replay-<variante>-<seed>.json` e 📂 abre um arquivo
+  `.json` baixado para assistir no ReplayReview — sem clipboard no meio.
+- **12.4 Notificações PWA**: ao entrar na fila ranqueada (⚡) o app pede
+  permissão de notificação; quando a fila encontra mesa (`joined`), dispara
+  notificação local via Notification API. Escopo honesto: sem servidor de
+  push VAPID — a notificação exige o app aberto (mesmo em outra aba).
+- **12.5 App Android assinado (APK + AAB)**: wrapper Capacitor em `android/`
+  (minSdk 24 ≈ 99% dos aparelhos, target 35), keystore de release local,
+  `gradlew assembleRelease bundleRelease` e publicação em GitHub Releases.
+
+## App Android (APK/AAB)
+
+```bash
+npm run build && npx cap sync android
+cd android && ./gradlew assembleRelease bundleRelease
+# android/app/build/outputs/apk/release/app-release.apk   (instala direto)
+# android/app/build/outputs/bundle/release/app-release.aab (Play Store)
+```
+
+- **Assinatura**: `android/keystore.properties` (fora do repositório) aponta
+  para `android/umo-release.keystore` (alias `umo`, senha
+  `umo-android-release`, validade 30 anos). Para uma publicação séria na
+  Play Store, gere uma chave própria com `keytool` e troque as credenciais.
+- Os binários assinados são publicados em
+  [Releases](https://github.com/krgitti/ultimate-mahjong/releases) — baixe o
+  `.apk` no celular, permita "fontes desconhecidas" e instale.
+
 ## Idiomas
 
 PT-BR, EN, ES, FR e DE cobrem toda a interface, incluindo o servidor (as
@@ -449,23 +487,17 @@ formato é versionado (`umo-replay-v1`) e o ruleset é recriado a partir dele.
 
 ## Próximos passos sugeridos
 
-1. **Testes e2e do modo online completo**: cobrir uma mão inteira por
-   WebSocket em Playwright (hoje os fluxos online são testados até a mesa
-   montada; a mão completa é coberta em `src/tests/server.test.ts`).
-*(rodadas anteriores concluídas: e2e de mão completa, replay no Solitaire,
-bots MCR por fan esperado, estatísticas por variante, idiomas FR/DE, revisão
-terminológica, Monte Carlo no bot MCR, QR do convite/replay, espectadores no
-chat e ranking por variante; sugestões atuais:)*
-1. **Revisão nativa dos idiomas**: FR/DE passaram por revisão técnica de
-   terminologia (Jahreszeiten, défausse…), mas uma revisão por falantes
-   nativos segue recomendada.
-2. **Monte Carlo mais fundo no bot**: o rollout atual usa 12 amostras × 8
-   compras só para desempatar candidatos; orçamentos maiores (e defesa
-   ponderada por EV de deal-in) refinariam o jogo de fim de mão.
-3. **Pódio da temporada por variante**: o painel da temporada arquiva os
-   três Elos, mas exibe o pódio clássico; falta a alternância HK/Riichi/MCR.
-4. **Replay do online por QR já existe; falta o do tradicional offline**:
-   exportar a partida contra bots e assistir no celular.
-5. **Notificações PWA**: avisar quando a fila ranqueada encontrar mesa
-   (Notification API + push no service worker).
-
+*(rodadas 1–12 concluídas: e2e de mão completa, replay no Solitaire, bots
+MCR por fan esperado, estatísticas por variante, idiomas FR/DE, revisão
+terminológica, Monte Carlo no bot MCR, QR do convite/replay, espectadores
+no chat, ranking por variante, rollout adaptativo + EV de deal-in, pódio
+da temporada por variante, replay offline em arquivo, notificações PWA e
+app Android assinado; sugestões atuais:)*
+1. **Revisão nativa dos idiomas**: FR/DE passaram por revisão técnica, mas
+   revisão por falantes nativos segue recomendada.
+2. **Web Push de verdade**: servidor de push VAPID + Push API no service
+   worker para notificar mesmo com o app fechado.
+3. **Monte Carlo também no HK/Riichi**: hoje o rollout calibra só o bot MCR;
+   portar o orçamento adaptativo para as outras variantes.
+4. **CI do Android**: job de release no GitHub Actions com keystore em
+   segredo, publicando APK/AAB automaticamente a cada tag.
