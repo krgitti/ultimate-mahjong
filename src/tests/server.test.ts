@@ -21,7 +21,7 @@ interface Snap {
     offers: { seat: number; kind: string }[];
   };
   myActions?: { legal: number[] };
-  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number; ranked?: boolean };
+  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number; ranked?: boolean; isPrivate?: boolean };
   code?: string;
   token?: string;
   accountToken?: string;
@@ -719,4 +719,101 @@ describe('item 6b — chat de mesa e emotes', () => {
       await server.close();
     }
   }, 15000);
+});
+
+describe('item 7b — salas privadas e ranqueada 3 humanos + 1 bot', () => {
+  const sendOpen = (c: TestClient, msg: unknown) => {
+    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+    else c.ws.on('open', () => c.ws.send(JSON.stringify(msg)));
+  };
+
+  it('sala privada: senha obrigatória para entrar/assistir; token de assento dispensa', async () => {
+    const PORT9 = 8911;
+    const server = startServer({ port: PORT9 });
+    try {
+      const A = client(PORT9);
+      const B = client(PORT9);
+      const C = client(PORT9);
+
+      sendOpen(A, { t: 'create', name: 'Ana', password: 'segredo' });
+      const j = await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      const snap = await A.next((m) => m.t === 'snapshot', 15000, 'A snap');
+      expect(snap.meta!.isPrivate).toBe(true);
+
+      // sem senha → erro
+      sendOpen(B, { t: 'join', code: j.code, name: 'Bia' });
+      const e1 = await B.next((m) => m.t === 'error', 15000, 'B no pw');
+      expect(e1.error).toContain('privada');
+
+      // senha errada → erro
+      B.ws.send(JSON.stringify({ t: 'join', code: j.code, name: 'Bia', password: 'errada' }));
+      const e2 = await B.next((m) => m.t === 'error', 15000, 'B wrong pw');
+      expect(e2.error).toContain('senha incorreta');
+
+      // senha correta → entra
+      B.ws.send(JSON.stringify({ t: 'join', code: j.code, name: 'Bia', password: 'segredo' }));
+      const jb = await B.next((m) => m.t === 'joined', 15000, 'B joined');
+      expect(jb.seat).toBe(1);
+
+      // espectador sem senha → erro; com senha → entra
+      sendOpen(C, { t: 'spectate', code: j.code, name: 'Spy' });
+      const e3 = await C.next((m) => m.t === 'error', 15000, 'C no pw');
+      expect(e3.error).toContain('privada');
+      C.ws.send(JSON.stringify({ t: 'spectate', code: j.code, name: 'Spy', password: 'segredo' }));
+      const jc = await C.next((m) => m.t === 'joined', 15000, 'C spectating');
+      expect(jc.spectator).toBe(true);
+
+      // reconexão por token de assento dispensa senha (token é credencial)
+      const B2 = client(PORT9);
+      sendOpen(B2, { t: 'join', code: j.code, name: 'Bia', token: jb.token });
+      const jr = await B2.next((m) => m.t === 'joined', 15000, 'B reconnected');
+      expect(jr.seat).toBe(1);
+      expect(jr.reconnected).toBe(true);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
+
+  it('ranqueada exige 3+ humanos para começar; 3 humanos + 1 bot inicia', async () => {
+    const PORT10 = 8912;
+    const server = startServer({ port: PORT10 });
+    try {
+      const acc = async (c: TestClient, username: string): Promise<string> =>
+        new Promise((res) => {
+          c.ws.on('message', (raw) => {
+            const m = JSON.parse(String(raw)) as Snap;
+            if (m.t === 'account' && m.accountToken) res(m.accountToken);
+          });
+          sendOpen(c, { t: 'account', username });
+        });
+
+      // --- sala com só 2 humanos: start bloqueado
+      const A = client(PORT10);
+      const B = client(PORT10);
+      const tA = await acc(A, 'r3-ana');
+      await acc(B, 'r3-bia');
+      sendOpen(A, { t: 'create', name: 'Ana', ranked: true, accountToken: tA });
+      const j1 = await A.next((m) => m.t === 'joined', 15000, 'A ranked');
+      B.ws.readyState === WebSocket.OPEN
+        ? B.ws.send(JSON.stringify({ t: 'join', code: j1.code, name: 'Bia' }))
+        : B.ws.on('open', () => B.ws.send(JSON.stringify({ t: 'join', code: j1.code, name: 'Bia' })));
+      await B.next((m) => m.t === 'joined', 15000, 'B joined');
+      A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+      const err = await A.next((m) => m.t === 'error', 15000, 'start blocked');
+      expect(err.error).toContain('3 jogadores humanos');
+      const notStarted = await A.next((m) => m.t === 'snapshot', 15000, 'still lobby');
+      expect(notStarted.meta!.started).toBe(false);
+
+      // --- 3º humano entra → start libera e o 4º assento vira bot
+      const C = client(PORT10);
+      sendOpen(C, { t: 'join', code: j1.code, name: 'Caio' });
+      await C.next((m) => m.t === 'joined', 15000, 'C joined');
+      A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+      const started = await A.next((m) => m.t === 'snapshot' && m.meta!.started, 30000, 'started');
+      expect(started.meta!.seats[3]).toBeNull(); // bot não é sessão
+      expect(started.meta!.ranked).toBe(true);
+    } finally {
+      await server.close();
+    }
+  }, 90000);
 });

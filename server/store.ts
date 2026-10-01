@@ -35,6 +35,8 @@ export interface RoomRecord {
   rulesConfig: RulesConfigId;
   /** ranked rooms record results on the linked accounts at match end */
   ranked?: boolean;
+  /** salas privadas (item 7.2): hash sha256 da senha */
+  passwordHash?: string;
   seed: number;
   actions: ReplayAction[];
   seats: (SeatRecord | null)[];

@@ -20,6 +20,7 @@ interface Meta {
   seats: ({ seat: number; name: string; connected: boolean; human: boolean } | null)[];
   canStart: boolean;
   ranked?: boolean;
+  isPrivate?: boolean;
 }
 interface MyActions {
   legal: number[];
@@ -119,6 +120,8 @@ export function OnlineScreen() {
   const [accountName, setAccountName] = useState(() => sessionStorage.getItem('umo.online.accountName') || '');
   const [accountUser, setAccountUser] = useState('');
   const [rulesSel, setRulesSel] = useState<'classic' | 'chicken' | 'riichi' | 'mcr'>('classic');
+  const [roomPw, setRoomPw] = useState('');
+  const [joinPw, setJoinPw] = useState('');
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
   const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number } | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
@@ -293,17 +296,26 @@ export function OnlineScreen() {
           </select>
         </label>
         <div className="row" style={{ marginTop: 10 }}>
-          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined })}>
+          <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined, password: roomPw || undefined })}>
             ✚ Criar sala
           </button>
           <button
             className="btn"
             title={accountToken ? 'Resultados contam para a sua conta' : 'Crie uma conta para salas ranqueadas'}
             disabled={!accountToken}
-            onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, ranked: true, accountToken })}
+            onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, ranked: true, accountToken, password: roomPw || undefined })}
           >
             🏆 Sala ranqueada
           </button>
+          <input
+            type="password"
+            value={roomPw}
+            onChange={(e) => setRoomPw(e.target.value)}
+            placeholder="🔒 Senha (opcional)"
+            style={{ width: 150 }}
+            maxLength={32}
+            aria-label="Senha da sala"
+          />
         </div>
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn btn-primary" onClick={() => connect({ t: 'queue', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined })}>
@@ -330,8 +342,17 @@ export function OnlineScreen() {
             style={{ width: 180 }}
             maxLength={4}
           />
-          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador', accountToken: accountToken ?? undefined })}>Entrar na sala</button>
-          <button className="btn" onClick={() => connect({ t: 'spectate', code: joinCode, name: name || 'Espectador' })}>👁 Assistir</button>
+          <input
+            type="password"
+            value={joinPw}
+            onChange={(e) => setJoinPw(e.target.value)}
+            placeholder="🔒 Senha"
+            style={{ width: 100 }}
+            maxLength={32}
+            aria-label="Senha para entrar"
+          />
+          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador', accountToken: accountToken ?? undefined, password: joinPw || undefined })}>Entrar na sala</button>
+          <button className="btn" onClick={() => connect({ t: 'spectate', code: joinCode, name: name || 'Espectador', password: joinPw || undefined })}>👁 Assistir</button>
         </div>
         <div className="row" style={{ marginTop: 10 }}>
           <input
@@ -399,8 +420,15 @@ export function OnlineScreen() {
         <h1 className="page-title">
           Sala {code}
           {meta?.ranked ? ' 🏆' : ''}
+          {meta?.isPrivate ? ' 🔒' : ''}
         </h1>
-        {meta?.ranked && <p className="page-sub">Sala ranqueada — o resultado conta para as contas vinculadas.</p>}
+        {meta?.ranked && (
+          <p className="page-sub">
+            Sala ranqueada — o resultado conta para as contas vinculadas. Começa com 3+ humanos
+            (assentos vazios viram bots).
+          </p>
+        )}
+        {meta?.isPrivate && <p className="page-sub">🔒 Sala privada — quem entrar precisa da senha.</p>}
         <p className="page-sub">Compartilhe o código <b>{code}</b>. Seu token de reconexão fica salvo nesta aba.</p>
         <div className="panel">
           {meta?.seats.map((s2, i) => (
@@ -436,7 +464,8 @@ export function OnlineScreen() {
       <div className="row-between" style={{ marginBottom: '0.5rem' }}>
         <h1 className="page-title" style={{ fontSize: '1.2rem' }}>
           Sala {meta?.code}
-          {meta?.ranked ? ' 🏆' : ''} — mão {v.handNumber} · vento {WIND_PT[v.roundWind]}
+          {meta?.ranked ? ' 🏆' : ''}
+          {meta?.isPrivate ? ' 🔒' : ''} — mão {v.handNumber} · vento {WIND_PT[v.roundWind]}
         </h1>
         <span className="muted small">Muro {v.wallCount}</span>
       </div>

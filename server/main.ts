@@ -15,6 +15,7 @@
  * Run: npx tsx server/main.ts  (port 8787 by default, PORT env override)
  */
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   newMatch,
@@ -78,6 +79,8 @@ interface Room {
   /** ranked rooms record match results on the linked accounts */
   ranked: boolean;
   rankedRecorded: boolean;
+  /** salas privadas (item 7.2): hash sha256 da senha, ou null */
+  passwordHash: string | null;
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -130,6 +133,7 @@ export function startServer(opts: ServerOptions) {
       saveTimer: null,
       ranked: rec.ranked ?? false,
       rankedRecorded: false, // match-over rooms are deleted, never rebuilt
+      passwordHash: rec.passwordHash ?? null,
     };
     rooms.set(rec.code, room);
     return room;
@@ -162,6 +166,7 @@ export function startServer(opts: ServerOptions) {
       started: room.started,
       rngTick: room.rngTick,
       ranked: room.ranked,
+      passwordHash: room.passwordHash ?? undefined,
       updatedAt: Date.now(),
     };
   }
@@ -234,6 +239,7 @@ export function startServer(opts: ServerOptions) {
       saveTimer: null,
       ranked: false,
       rankedRecorded: false,
+      passwordHash: null,
     };
     four.forEach((e, seat) => {
       const sess: Session = { ws: e.ws, token: token(), name: e.name, connected: true, lastSeen: Date.now(), accountId: e.accountId };
@@ -285,6 +291,7 @@ export function startServer(opts: ServerOptions) {
             canStart: seat === room.hostSeat,
             spectators: room.spectators.length,
             ranked: room.ranked,
+            isPrivate: room.passwordHash !== null,
           },
         });
       }
@@ -301,6 +308,7 @@ export function startServer(opts: ServerOptions) {
             canStart: false,
             spectators: room.spectators.length,
             ranked: room.ranked,
+            isPrivate: room.passwordHash !== null,
           },
         });
       }
@@ -503,6 +511,12 @@ export function startServer(opts: ServerOptions) {
   // conjunto fixo do servidor (o cliente manda só o índice).
   const EMOTES = ['😀', '😂', '😮', '😢', '👍', '🙏', '🀄', '🎉'];
 
+  // salas privadas (item 7.2): senha nunca fica em claro no estado/log
+  const sha256pw = (pw: string) => createHash('sha256').update(pw).digest('hex');
+  const wrongPassword = (room: Room, msg: Record<string, unknown>) =>
+    room.passwordHash !== null &&
+    (typeof msg.password !== 'string' || sha256pw(msg.password) !== room.passwordHash);
+
   wss.on('connection', (ws) => {
     let myRoom: Room | null = null;
     let mySeat = -1;
@@ -557,6 +571,7 @@ export function startServer(opts: ServerOptions) {
           saveTimer: null,
           ranked: wantRanked,
           rankedRecorded: false,
+          passwordHash: typeof msg.password === 'string' && msg.password ? sha256pw(msg.password) : null,
         };
         const sess: Session = { ws, token: token(), name: String(msg.name || 'Jogador 1'), connected: true, lastSeen: Date.now(), accountId: null };
         room.seats[0] = sess;
@@ -699,6 +714,10 @@ export function startServer(opts: ServerOptions) {
           send(ws, { t: 'error', error: 'Sala não encontrada.' });
           return;
         }
+        if (wrongPassword(room, msg)) {
+          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.' });
+          return;
+        }
         room.spectators.push({ ws, name: String(msg.name || 'Espectador') });
         myRoom = room;
         spectating = true;
@@ -737,6 +756,11 @@ export function startServer(opts: ServerOptions) {
         const tok = msg.token as string | undefined;
         if (!room) {
           send(ws, { t: 'error', error: 'Sala não encontrada.' });
+          return;
+        }
+        // token de assento é credencial suficiente — senha só para entrada nova
+        if (!tok && wrongPassword(room, msg)) {
+          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.' });
           return;
         }
         // reconnection by token?
@@ -786,7 +810,14 @@ export function startServer(opts: ServerOptions) {
 
       if (t === 'start') {
         if (mySeat !== room.hostSeat || room.started) return;
-        const fillBots = msg.fillBots !== false;
+        // ranqueadas (item 7.2): mesa 3 humanos + 1 bot é o mínimo — com menos
+        // humanos o resultado não é competitivo; o assento vazio vira bot.
+        const humans = room.seats.filter((x) => x !== null).length;
+        if (room.ranked && humans < 3) {
+          send(ws, { t: 'error', error: 'Salas ranqueadas exigem pelo menos 3 jogadores humanos.' });
+          return;
+        }
+        const fillBots = room.ranked ? true : msg.fillBots !== false;
         room.started = true;
         for (let i = 0; i < 4; i++) {
           if (!room.seats[i]) {
