@@ -13,3 +13,12 @@ if (root) {
     </StrictMode>
   );
 }
+
+// item 9.6: PWA — service worker só em produção (evita cache no dev)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* offline/registro indisponível: app segue funcionando online */
+    });
+  });
+}

@@ -102,6 +102,18 @@ test.describe('Ultimate Mahjong Online — essential flows', () => {
     await expect(page.getByRole('button', { name: /Jogar partida completa/ })).toBeVisible();
   });
 
+  test('PWA: manifest servido e válido (item 9.6)', async ({ page }) => {
+    const res = await page.request.get('/manifest.webmanifest');
+    expect(res.status()).toBe(200);
+    const json = await res.json();
+    expect(json.name).toBe('Ultimate Mahjong Online');
+    expect(json.display).toBe('standalone');
+    const sw = await page.request.get('/sw.js');
+    expect(sw.status()).toBe(200);
+    const icon = await page.request.get('/icon.svg');
+    expect(icon.status()).toBe(200);
+  });
+
   test('responsive: no horizontal overflow on a phone viewport', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 720 });
     await page.goto('/');
