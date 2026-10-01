@@ -1,5 +1,5 @@
 import type { TileFace } from '../tiles/tiles';
-import { faceIndex, isTerminalOrHonor } from '../tiles/tiles';
+import { faceIndex, indexToFace, isTerminalOrHonor } from '../tiles/tiles';
 import { countsFromFaces, normalShanten, acceptanceCount, winningWaits, type Counts } from '../traditional/hand';
 import type { MeldKind } from '../traditional/engine';
 import type { Rng } from '../tiles/rng';
@@ -96,6 +96,55 @@ function handCounts(view: BotView): Counts {
 function shantenAfterDiscard(view: BotView, i: number): number {
   const remaining = view.hand.filter((_, k) => k !== i);
   return normalShanten(countsFromFaces(remaining), view.melds.length);
+}
+
+/**
+ * item 11.2: EV por amostragem (Monte Carlo leve) — simula compras
+ * aleatórias do muro desconhecido + descartes gulosos (menor shanten) e
+ * devolve o fan esperado médio de fechar a mão dentro do horizonte.
+ * Custo controlado: usado só para desempatar os melhores candidatos.
+ */
+export function mcrRolloutEv(
+  hand13: TileFace[],
+  usedCounts: Counts,
+  rng: Rng,
+  samples = 12,
+  horizon = 8
+): number {
+  const pool: TileFace[] = [];
+  for (let fi = 0; fi < 34; fi++) {
+    const left = 4 - usedCounts[fi];
+    for (let k = 0; k < left; k++) pool.push(indexToFace(fi));
+  }
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = rng.nextInt(i + 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  let total = 0;
+  let p = 0;
+  for (let s = 0; s < samples; s++) {
+    const hand = hand13.slice();
+    let won = false;
+    for (let d = 0; d < horizon && p < pool.length; d++) {
+      hand.push(pool[p++]);
+      if (normalShanten(countsFromFaces(hand), 0) === -1) {
+        won = true;
+        break;
+      }
+      let bestI = 0;
+      let bestSh = Infinity;
+      for (let i = 0; i < hand.length; i++) {
+        const sh = normalShanten(countsFromFaces(hand.filter((_, k) => k !== i)), 0);
+        if (sh < bestSh) {
+          bestSh = sh;
+          bestI = i;
+        }
+      }
+      hand.splice(bestI, 1);
+    }
+    if (won) total += 2 + mcrExpectedFan(hand);
+  }
+  return total / samples;
 }
 
 export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): number {
@@ -213,6 +262,16 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
     }
     return { idx, score };
   });
+  // item 11.2: em MCR hard (fora de betaori), a amostragem desempata os 3
+  // melhores candidatos pelo fan esperado de fechar a mão
+  if (difficulty === 'hard' && view.rulesetId === 'mcr' && !fold && scored.length > 1) {
+    const used2 = usedCounts(view);
+    const prelim = [...scored].sort((a, b) => b.score - a.score).slice(0, 3);
+    for (const cand of prelim) {
+      const remaining = view.hand.filter((_, k) => k !== cand.idx);
+      cand.score += 0.8 * mcrRolloutEv(remaining, used2, rng);
+    }
+  }
   scored.sort((a, b) => b.score - a.score);
   void base;
   return scored[0].idx;

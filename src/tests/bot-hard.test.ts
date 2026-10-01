@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseDiscard, shouldDeclareRiichi, mcrExpectedFan, type BotView } from '../game-engine/ai/bot';
+import { chooseDiscard, shouldDeclareRiichi, mcrExpectedFan, mcrRolloutEv, type BotView } from '../game-engine/ai/bot';
 import { totalRisk } from '../game-engine/ai/defense';
 import { countsFromFaces, faceIndexFor, type TileFace } from './botTestUtils';
 import { createRng } from '../game-engine/tiles/rng';
@@ -119,9 +119,39 @@ describe('item 9e — bot hard: betaori total, valor no riichi e MCR', () => {
       f('man', 7), f('wind', 2),
     ];
     const idxPin9 = flushHand.findIndex((x) => x.suit === 'pin' && x.rank === 9);
-    const idxMan7 = flushHand.findIndex((x) => x.suit === 'man' && x.rank === 7);
     expect(chooseDiscard({ ...baseView(flushHand), rulesetId: undefined }, 'hard', createRng(5))).toBe(idxPin9);
-    expect(chooseDiscard({ ...baseView(flushHand), rulesetId: 'mcr' }, 'hard', createRng(5))).toBe(idxMan7);
+    // o MCR jamais quebra o naipe: descarta outra coisa (man solto ou vento),
+    // mantendo os 7 pinos — desde o 11.2, às vezes escolhe até melhor (o vento)
+    const mcrPick = flushHand[chooseDiscard({ ...baseView(flushHand), rulesetId: 'mcr' }, 'hard', createRng(5))];
+    expect(mcrPick.suit).not.toBe('pin');
+  });
+
+  it('MCR: EV por amostragem (item 11.2) — tenpai vale mais que lixo, determinístico e barato', () => {
+    const tenpai: TileFace[] = [
+      f('man', 2), f('man', 3), f('man', 4),
+      f('pin', 5), f('pin', 6), f('pin', 7),
+      f('sou', 2), f('sou', 3), f('sou', 4),
+      f('man', 8), f('man', 8),
+      f('dragon', 1), f('dragon', 1),
+    ];
+    const junk: TileFace[] = [
+      f('man', 1), f('man', 4), f('man', 7),
+      f('pin', 2), f('pin', 5), f('pin', 9),
+      f('sou', 3), f('sou', 6),
+      f('wind', 1), f('wind', 2), f('wind', 3),
+      f('dragon', 1), f('dragon', 2),
+    ];
+    const evT = mcrRolloutEv(tenpai, countsFromFaces(tenpai), createRng(3));
+    const evJ = mcrRolloutEv(junk, countsFromFaces(junk), createRng(3));
+    expect(evT).toBeGreaterThan(evJ);
+    expect(evT).toBeGreaterThan(0);
+    // determinístico: mesma seed, mesmo valor
+    expect(mcrRolloutEv(tenpai, countsFromFaces(tenpai), createRng(3))).toBe(evT);
+    // custo controlado: o chooseDiscard MCR completo (com amostragem) roda rápido
+    const view: BotView = { ...baseView(tenpai.concat(f('wind', 4))), rulesetId: 'mcr' };
+    const t0 = Date.now();
+    for (let i = 0; i < 5; i++) chooseDiscard(view, 'hard', createRng(i + 1));
+    expect(Date.now() - t0).toBeLessThan(3000);
   });
 
 });
