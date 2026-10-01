@@ -412,11 +412,12 @@ O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 
 ## Idiomas
 
-PT-BR, EN e ES cobrem toda a interface, incluindo o servidor (as mensagens de
-erro e de sistema viajam por código — `err.*`, `sys.*` — e são traduzidas no
-cliente; nenhuma string em português é hard-coded na tela). O seletor de
-idioma fica nas Configurações e é lembrado no perfil. Textos didáticos longos
-(descrições de fan MCR, tutoriais) seguem PT por decisão documentada.
+PT-BR, EN, ES, FR e DE cobrem toda a interface, incluindo o servidor (as
+mensagens de erro e de sistema viajam por código — `err.*`, `sys.*` — e são
+traduzidas no cliente; nenhuma string em português é hard-coded na tela). O
+seletor de idioma fica nas Configurações e é lembrado no perfil. Um teste de
+paridade exige que os cinco dicionários tenham exatamente o mesmo conjunto de
+chaves.
 
 ## Replays e compartilhamento
 
@@ -449,12 +450,19 @@ formato é versionado (`umo-replay-v1`) e o ruleset é recriado a partir dele.
 1. **Testes e2e do modo online completo**: cobrir uma mão inteira por
    WebSocket em Playwright (hoje os fluxos online são testados até a mesa
    montada; a mão completa é coberta em `src/tests/server.test.ts`).
-2. **Replay no Solitaire**: o formato `umo-replay-v1` já é genérico — falta
-   gravar as ações do Solitaire e reaproveitar o visualizador.
-3. **Bots MCR por valor esperado**: hoje o hard persegue mãos tricotadas e o
-   bônus de naipe/dragões; o próximo passo é estimar fan esperado por
-   descarte (não só shanten + bônus heurístico).
-4. **Perfil e estatísticas por variante**: separar histórico e gráficos por
-   ruleset (HK/Riichi/MCR) na tela de estatísticas.
-5. **Mais idiomas** (francês, alemão) e revisão por falantes nativos.
+*(itens 1–5 da rodada anterior foram implementados: e2e de mão completa,
+replay no Solitaire, bots MCR por fan esperado, estatísticas por variante e
+idiomas FR/DE; sugestões atuais:)*
+1. **Revisão nativa dos idiomas**: FR/DE foram traduzidos tecnicamente —
+   vale uma revisão por falantes nativos (termos de mahjong variam).
+2. **EV do bot MCR por amostragem**: o `mcrExpectedFan` é heurístico e
+   determinístico; uma estimativa por amostragem de compras (Monte Carlo
+   leve) refinaria a escolha de descarte.
+3. **Replays casuais por link curto**: o código de replay hoje vive no
+   servidor com expiração de 30 dias; um link curto compartilhável por QR
+   facilitaria mostrar partidas no celular.
+4. **Spectator com chat**: espectadores assistem mas não interagem; um chat
+   de sala (já existe o painel) poderia aceitar mensagens de quem assiste.
+5. **Ranking por variante**: o Elo hoje é único; separar rating por ruleset
+   (HK/Riichi/MCR) daria filas mais justas.
 

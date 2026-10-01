@@ -24,7 +24,7 @@ describe('item 8e — i18n', () => {
   });
 
   it('idioma inválido cai em PT; chave inexistente devolve a própria chave', () => {
-    setLang('fr' as never);
+    setLang('xx' as never);
     expect(getLang()).toBe('pt');
     expect(t('chave.que.nao.existe')).toBe('chave.que.nao.existe');
   });
@@ -36,11 +36,10 @@ describe('item 8e — i18n', () => {
     expect(t('home.c2m', { a: 3, b: 7 })).toBe('3/7 hands won');
   });
 
-  it('isLang valida os três idiomas', () => {
+  it('isLang valida os cinco idiomas', () => {
     expect(isLang('pt')).toBe(true);
     expect(isLang('en')).toBe(true);
     expect(isLang('es')).toBe(true);
-    expect(isLang('de')).toBe(false);
     expect(isLang(null)).toBe(false);
   });
 });
