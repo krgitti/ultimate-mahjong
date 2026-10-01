@@ -208,8 +208,8 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
         const risk = totalRisk(fi, opps, used);
         score -= risk * (push ? 1 : defensive ? 40 : 4); // pressur ~ ignores risk
       }
-      // item 9.5 — noção de valor MCR (helper puro testável)
-      if (view.rulesetId === 'mcr') score += mcrValueBonus(remaining);
+      // item 10.3: MCR escolhe descarte por fan esperado (não só shanten)
+      if (view.rulesetId === 'mcr') score += mcrExpectedFan(remaining);
     }
     return { idx, score };
   });
@@ -350,15 +350,51 @@ export function shouldDeclareRiichi(view: BotView): boolean {
  * mínimo da house rule — concentração em um naipe (flush/semi-flush) e
  * dragões (valores fixos em MCR). Informação 100% própria/pública.
  */
-export function mcrValueBonus(remaining: TileFace[]): number {
-  let suitMax = 0;
+/**
+ * item 10.3: fan esperado (MCR) — valor heurístico da mão restante,
+ * somando os fan que a mão ainda PODE alcançar ponderados pela
+ * probabilidade de alcançá-los (proporção das peças-chave já na mão).
+ * Não é Monte Carlo: é uma estimativa barata e determinística usada
+ * pelo hard para escolher QUAL mão seguir além do shanten.
+ */
+export function mcrExpectedFan(remaining: TileFace[]): number {
+  let ev = 0;
+
+  // Flush (24) / Meia-flush (6): concentração de naipe
   for (const su of ['man', 'pin', 'sou'] as const) {
-    const c = remaining.filter((f) => f.suit === su).length;
-    if (c > suitMax) suitMax = c;
+    const n = remaining.filter((f) => f.suit === su).length;
+    if (n >= 11) ev += 24 * 0.6; // pura quase decidida
+    else if (n >= 9) ev += 6 * 0.8; // meia-flush muito provável
+    else if (n >= 7) ev += 6 * 0.4; // meia-flush ainda viável
   }
-  let bonus = 0;
-  if (suitMax >= 8) bonus += 10;
-  else if (suitMax >= 6) bonus += 4;
-  bonus += remaining.filter((f) => f.suit === 'dragon').length * 1.5;
-  return bonus;
+
+  const byFace = new Map<string, number>();
+  for (const f of remaining) {
+    const k = `${f.suit}${f.rank}`;
+    byFace.set(k, (byFace.get(k) ?? 0) + 1);
+  }
+  let trips = 0;
+  let pairs = 0;
+  for (const [k, n] of byFace) {
+    if (k.startsWith('dragon')) {
+      if (n >= 3) ev += 2; // Pung de Dragão (2 fan)
+      else if (n === 2) ev += 0.5; // par a caminho
+      else ev += 0.3; // dragão isolado ainda vale a pena guardar
+    }
+    if (n >= 3) trips++;
+    else if (n === 2) pairs++;
+  }
+
+  // Todos os Trincas (6 fan)
+  if (trips >= 3) ev += 6 * 0.6;
+  else if (trips === 2 && pairs >= 2) ev += 6 * 0.3;
+
+  // Todas as Simples (2 fan): sem terminais nem honras
+  const hasTermOrHonor = remaining.some(
+    (f) => f.suit === 'wind' || f.suit === 'dragon' || f.rank === 1 || f.rank === 9
+  );
+  if (!hasTermOrHonor) ev += 2 * 0.7;
+
+  return ev;
 }
+

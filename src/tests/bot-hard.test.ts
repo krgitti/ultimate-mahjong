@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chooseDiscard, shouldDeclareRiichi, mcrValueBonus, type BotView } from '../game-engine/ai/bot';
+import { chooseDiscard, shouldDeclareRiichi, mcrExpectedFan, type BotView } from '../game-engine/ai/bot';
 import { totalRisk } from '../game-engine/ai/defense';
 import { countsFromFaces, faceIndexFor, type TileFace } from './botTestUtils';
 import { createRng } from '../game-engine/tiles/rng';
@@ -94,29 +94,34 @@ describe('item 9e — bot hard: betaori total, valor no riichi e MCR', () => {
     expect(shouldDeclareRiichi(open)).toBe(false);
   });
 
-  it('MCR: mcrValueBonus premia flush e dragões; bot preserva dragões', () => {
-    const pins8 = [f('pin', 1), f('pin', 2), f('pin', 3), f('pin', 4), f('pin', 5), f('pin', 6), f('pin', 7), f('pin', 8)];
-    expect(mcrValueBonus(pins8)).toBe(10);
-    expect(mcrValueBonus(pins8.slice(0, 6))).toBe(4);
-    expect(mcrValueBonus(pins8.slice(0, 5))).toBe(0);
-    expect(mcrValueBonus([f('man', 1), f('sou', 5), f('pin', 9)])).toBe(0);
-    expect(mcrValueBonus([f('dragon', 1), f('dragon', 1), f('dragon', 1), f('man', 2)])).toBe(4.5);
+  it('MCR: fan esperado (item 10.3) — EV puro e descarte guiado por valor', () => {
+    // EV: concentração de naipe vale mais que mão mista
+    const pins7 = [f('pin', 2), f('pin', 3), f('pin', 4), f('pin', 5), f('pin', 6), f('pin', 7), f('pin', 9)];
+    const mixed = [f('man', 1), f('pin', 9), f('sou', 4), f('wind', 1), f('dragon', 2), f('man', 5), f('pin', 6)];
+    expect(mcrExpectedFan(pins7)).toBeGreaterThan(mcrExpectedFan(mixed));
+    // EV: trinca de dragão (2 fan) > par > isolado
+    const trip = [f('dragon', 1), f('dragon', 1), f('dragon', 1)];
+    const pair = [f('dragon', 1), f('dragon', 1), f('man', 5)];
+    const lone = [f('dragon', 1), f('man', 5), f('sou', 6)];
+    expect(mcrExpectedFan(trip)).toBeGreaterThan(mcrExpectedFan(pair));
+    expect(mcrExpectedFan(pair)).toBeGreaterThan(mcrExpectedFan(lone));
+    // EV: todas as simples (sem terminais/honras) pontua
+    const simples = [f('man', 2), f('man', 3), f('pin', 5), f('pin', 6), f('sou', 7), f('sou', 8)];
+    expect(mcrExpectedFan(simples)).toBeGreaterThan(0);
+    expect(mcrExpectedFan([...simples.slice(0, 5), f('man', 9)])).toBe(0);
 
-    // efeito no descarte: com alternativas equivalentes, o bot MCR preserva
-    // o dragão (bônus) e descarta o isolado comum
-    const hand: TileFace[] = [
+    // comportamento: meia-flush — o clássico solta o pino terminal isolado,
+    // o MCR preserva o naipe (7 pinos → meia-flush viável) e solta o man
+    const flushHand: TileFace[] = [
+      f('pin', 2), f('pin', 3), f('pin', 4), f('pin', 5), f('pin', 6), f('pin', 7), f('pin', 9),
       f('man', 2), f('man', 3), f('man', 4),
-      f('pin', 5), f('pin', 6), f('pin', 7),
-      f('sou', 2), f('sou', 3), f('sou', 4),
-      f('man', 8), f('man', 8),
-      f('dragon', 2), f('wind', 3), f('wind', 4),
+      f('sou', 2), f('sou', 3),
+      f('man', 7), f('wind', 2),
     ];
-    const idxDragon = hand.findIndex((t) => t.suit === 'dragon');
-    const idxMkr = (rulesetId?: string) => chooseDiscard({ ...baseView(hand), rulesetId }, 'hard', createRng(11));
-    // a estratégia muda com o ruleset: o clássico descarta o dragão isolado,
-    // o MCR o preserva (bônus de valor — dragões valem fan em MCR)
-    expect(idxMkr(undefined)).toBe(idxDragon);
-    expect(idxMkr('mcr')).not.toBe(idxDragon);
+    const idxPin9 = flushHand.findIndex((x) => x.suit === 'pin' && x.rank === 9);
+    const idxMan7 = flushHand.findIndex((x) => x.suit === 'man' && x.rank === 7);
+    expect(chooseDiscard({ ...baseView(flushHand), rulesetId: undefined }, 'hard', createRng(5))).toBe(idxPin9);
+    expect(chooseDiscard({ ...baseView(flushHand), rulesetId: 'mcr' }, 'hard', createRng(5))).toBe(idxMan7);
   });
 
 });
