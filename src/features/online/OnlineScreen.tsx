@@ -46,6 +46,69 @@ interface ChatMsg {
   emote?: string;
 }
 
+/** Últimas N partidas ranqueadas + gráfico de Elo (SVG puro, sem libs) */
+function HistoryPanel({ rows }: { rows: { playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string }[] }) {
+  // série cronológica (mais antiga → mais nova) para o gráfico
+  const series = [...rows].sort((a, b) => a.playedAt - b.playedAt).map((r) => r.eloAfter);
+  const W = 320;
+  const H = 96;
+  const pad = 10;
+  let pts = '';
+  let min = 1500;
+  let max = 1500;
+  if (series.length > 0) {
+    min = Math.min(...series);
+    max = Math.max(...series);
+    const span = Math.max(1, max - min);
+    pts = series
+      .map((v, i) => {
+        const x = series.length === 1 ? W / 2 : pad + (i * (W - 2 * pad)) / (series.length - 1);
+        const y = H - pad - ((v - min) / span) * (H - 2 * pad);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+  }
+  return (
+    <div className="panel" style={{ marginTop: 8 }}>
+      <h3 className="panel-title">📜 Histórico ranqueado (últimas {rows.length})</h3>
+      {rows.length === 0 ? (
+        <p className="muted small">Nenhuma partida ranqueada ainda.</p>
+      ) : (
+        <>
+          <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', maxWidth: 420, display: 'block' }} role="img" aria-label="Gráfico de Elo">
+            <polyline points={pts} fill="none" stroke="var(--gold, #d4af37)" strokeWidth="2" />
+            {series.map((v, i) => {
+              const x = series.length === 1 ? W / 2 : pad + (i * (W - 2 * pad)) / (series.length - 1);
+              const y = H - pad - ((v - Math.min(...series)) / Math.max(1, Math.max(...series) - Math.min(...series))) * (H - 2 * pad);
+              return <circle key={i} cx={x} cy={y} r="2.5" fill="var(--gold, #d4af37)" />;
+            })}
+            <text x="4" y="10" fontSize="9" fill="currentColor" opacity="0.7">⭐ {max}</text>
+            <text x="4" y={H - 3} fontSize="9" fill="currentColor" opacity="0.7">⭐ {min}</text>
+          </svg>
+          {rows.slice(0, 10).map((r, i) => {
+            const d = r.eloAfter - r.eloBefore;
+            return (
+              <div key={i} className="row small" style={{ marginBottom: 3 }}>
+                <span style={{ width: 18 }}>{r.win ? '🏆' : '·'}</span>
+                <span style={{ width: 130 }} className="muted">{new Date(r.playedAt).toLocaleString()}</span>
+                <span style={{ flex: 1 }}>
+                  {r.win ? 'Vitória' : 'Derrota'} · {r.points >= 0 ? '+' : ''}{r.points} pts · sala {r.roomCode}
+                </span>
+                <span>
+                  ⭐ {r.eloBefore} → <b>{r.eloAfter}</b>{' '}
+                  <span style={{ color: d > 0 ? '#9fe8a2' : d < 0 ? '#ff9d99' : 'inherit' }}>
+                    ({d > 0 ? '+' : ''}{d})
+                  </span>
+                </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function OnlineScreen() {
   const [phase, setPhase] = useState<'form' | 'lobby' | 'table'>('form');
   const [name, setName] = useState(() => sessionStorage.getItem('umo.online.name') || '');
@@ -61,6 +124,7 @@ export function OnlineScreen() {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
+  const [hist, setHist] = useState<{ playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string }[] | null>(null);
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -102,6 +166,10 @@ export function OnlineScreen() {
       }
       if (msg.t === 'leaderboard') {
         setLeader((msg.rows ?? []) as typeof leader);
+        return;
+      }
+      if (msg.t === 'history') {
+        setHist((msg.rows ?? []) as typeof hist);
         return;
       }
       if (msg.t === 'chat' || msg.t === 'emote') {
@@ -281,6 +349,9 @@ export function OnlineScreen() {
             <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>📊 Estatísticas</button>
           )}
           <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>🏅 Classificação</button>
+          {accountToken && (
+            <button className="btn" onClick={() => connect({ t: 'history', accountToken })}>📜 Histórico</button>
+          )}
         </div>
         {stats && (
           <p className="muted small" style={{ marginTop: 6 }}>
@@ -288,6 +359,7 @@ export function OnlineScreen() {
             <b>{stats.points}</b> pontos · ⭐ Elo <b>{stats.elo}</b>
           </p>
         )}
+        {hist && <HistoryPanel rows={hist} />}
         {leader && (
           <div className="panel" style={{ marginTop: 8 }}>
             <h3 className="panel-title">🏅 Classificação (Elo)</h3>

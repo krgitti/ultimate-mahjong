@@ -55,6 +55,15 @@ export interface AccountRecord {
   elo?: number;
 }
 
+export interface HistoryRow {
+  playedAt: number;
+  win: boolean;
+  points: number;
+  eloBefore: number;
+  eloAfter: number;
+  roomCode: string;
+}
+
 export interface LeaderRow {
   username: string;
   elo: number;
@@ -75,6 +84,8 @@ export interface RoomStore {
   roomsOfAccount(accountId: number): Promise<string[]>;
   linkSeat(code: string, seat: number, accountId: number): Promise<void>;
   recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number): Promise<void>;
+  recordHistory(accountId: number, row: HistoryRow): Promise<void>;
+  history(accountId: number, limit?: number): Promise<HistoryRow[]>;
   leaderboard(limit?: number): Promise<LeaderRow[]>;
   close(): Promise<void>;
 }
@@ -150,6 +161,15 @@ export class MemoryStore implements RoomStore {
     if (win) a.rankedWins++;
     a.rankedPoints += pointsDelta;
     if (newElo !== undefined) a.elo = newElo;
+  }
+  private historyRows = new Map<number, HistoryRow[]>();
+  async recordHistory(accountId: number, row: HistoryRow): Promise<void> {
+    const list = this.historyRows.get(accountId) ?? [];
+    list.push(row);
+    this.historyRows.set(accountId, list);
+  }
+  async history(accountId: number, limit = 20): Promise<HistoryRow[]> {
+    return [...(this.historyRows.get(accountId) ?? [])].sort((a, b) => b.playedAt - a.playedAt).slice(0, limit);
   }
   async leaderboard(limit = 20): Promise<LeaderRow[]> {
     return [...this.accounts.values()]
@@ -270,6 +290,30 @@ export class PostgresStore implements RoomStore {
        WHERE id = $1`,
       [accountId, win ? 1 : 0, pointsDelta, newElo ?? null]
     );
+  }
+
+  async recordHistory(accountId: number, row: HistoryRow): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO match_history (account_id, played_at, win, points, elo_before, elo_after, room_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [accountId, row.playedAt, row.win, row.points, row.eloBefore, row.eloAfter, row.roomCode]
+    );
+  }
+
+  async history(accountId: number, limit = 20): Promise<HistoryRow[]> {
+    const res = await this.pool.query(
+      `SELECT played_at, win, points, elo_before, elo_after, room_code
+       FROM match_history WHERE account_id = $1 ORDER BY played_at DESC, id DESC LIMIT $2`,
+      [accountId, limit]
+    );
+    return res.rows.map((r) => ({
+      playedAt: Number(r.played_at),
+      win: r.win as boolean,
+      points: r.points as number,
+      eloBefore: r.elo_before as number,
+      eloAfter: r.elo_after as number,
+      roomCode: r.room_code as string,
+    }));
   }
 
   async leaderboard(limit = 20): Promise<LeaderRow[]> {

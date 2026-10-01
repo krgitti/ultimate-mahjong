@@ -363,14 +363,28 @@ export function startServer(opts: ServerOptions) {
         // stats are recorded for every linked account either way.
         void (async () => {
           const newElo = new Map<number, number>();
+          const eloBefore = new Map<number, number>();
+          const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
+          linked.forEach((l, i) => eloBefore.set(l.accId, accs[i]?.elo ?? 1500));
           if (linked.length >= 2) {
-            const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
-            const elos = accs.map((a) => a?.elo ?? 1500);
+            const elos = linked.map((l) => eloBefore.get(l.accId)!);
             const deltas = eloDeltas(elos, linked.map((l) => scores[l.seat]));
-            linked.forEach((l, i) => newElo.set(l.accId, Math.max(0, (accs[i]?.elo ?? 1500) + deltas[i])));
+            linked.forEach((l, i) => newElo.set(l.accId, Math.max(0, eloBefore.get(l.accId)! + deltas[i])));
           }
           for (const l of linked) {
-            await store.recordRankedResult(l.accId, scores[l.seat] === best, scores[l.seat], newElo.get(l.accId));
+            const win = scores[l.seat] === best;
+            await store.recordRankedResult(l.accId, win, scores[l.seat], newElo.get(l.accId));
+            // histórico (item 7.1): uma linha por conta por partida, mesmo
+            // com <2 contas vinculadas (Elo apenas não muda)
+            const before = eloBefore.get(l.accId)!;
+            await store.recordHistory(l.accId, {
+              playedAt: Date.now(),
+              win,
+              points: scores[l.seat],
+              eloBefore: before,
+              eloAfter: newElo.get(l.accId) ?? before,
+              roomCode: room.code,
+            });
           }
         })().catch((e) => console.error('ranked record failed', e));
       }
@@ -637,6 +651,23 @@ export function startServer(opts: ServerOptions) {
           rankedPoints: acc.rankedPoints ?? 0,
           elo: acc.elo ?? 1500,
         });
+        return;
+      }
+
+      if (t === 'history') {
+        // últimas N partidas ranqueadas da conta (item 7.1)
+        if (typeof msg.accountToken !== 'string') {
+          send(ws, { t: 'error', error: 'Conta não informada.' });
+          return;
+        }
+        const acc = await store.accountByToken(msg.accountToken);
+        if (!acc) {
+          send(ws, { t: 'error', error: 'Conta não encontrada.' });
+          return;
+        }
+        const limit = Math.min(50, Math.max(1, Number(msg.limit) || 20));
+        const rows = await store.history(acc.id, limit);
+        send(ws, { t: 'history', username: acc.username, rows });
         return;
       }
 

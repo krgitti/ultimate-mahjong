@@ -40,7 +40,10 @@ interface Snap {
   elo?: number;
   text?: string;
   emote?: string;
-  rows?: { username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[];
+  rows?: {
+    username?: string; elo?: number; rankedPlayed?: number; rankedWins?: number; rankedPoints?: number;
+    playedAt?: number; win?: boolean; points?: number; eloBefore?: number; eloAfter?: number; roomCode?: string;
+  }[];
 }
 
 interface TestClient {
@@ -556,7 +559,18 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(ana.elo).toBe(sa.elo);
       expect(bia.elo).toBe(sb.elo);
       // ordenado por elo decrescente
-      for (let i = 1; i < rows.length; i++) expect(rows[i - 1].elo).toBeGreaterThanOrEqual(rows[i].elo);
+      for (let i = 1; i < rows.length; i++) expect(rows[i - 1].elo!).toBeGreaterThanOrEqual(rows[i].elo!);
+
+      // histórico (item 7.1): uma partida por conta, Elo antes/depois coerente
+      A.ws.send(JSON.stringify({ t: 'history', accountToken: accA }));
+      const ha = await A.next((m) => m.t === 'history', 10000, 'history A');
+      const hrows = ha.rows!;
+      expect(hrows.length).toBe(1);
+      expect(hrows[0].eloBefore).toBe(1500);
+      expect(hrows[0].eloAfter).toBe(sa.elo);
+      expect(hrows[0].roomCode).toBe(j.code);
+      expect(hrows[0].win).toBe((sa.rankedWins ?? 0) === 1);
+      expect(Number(hrows[0].playedAt)).toBeGreaterThan(0);
       L.ws.close();
     } finally {
       await server.close();
@@ -583,6 +597,14 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(rows[i1].elo).toBe(1516);
       const byToken = await c.accountByToken(t1);
       expect(byToken?.elo).toBe(1516);
+      // histórico (item 7.1)
+      await c.recordHistory(a1.id, { playedAt: 1000, win: true, points: 30, eloBefore: 1500, eloAfter: 1516, roomCode: 'PG01' });
+      await c.recordHistory(a1.id, { playedAt: 2000, win: false, points: -16, eloBefore: 1516, eloAfter: 1516, roomCode: 'PG02' });
+      const h = await c.history(a1.id, 10);
+      expect(h.length).toBe(2);
+      expect(h[0].playedAt).toBe(2000); // mais recente primeiro
+      expect(h[0].roomCode).toBe('PG02');
+      expect(h[1].eloAfter).toBe(1516);
       await c.close();
     } catch {
       ok = false;
