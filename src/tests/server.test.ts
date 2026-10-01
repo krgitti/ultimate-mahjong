@@ -499,6 +499,10 @@ describe('item 6a — Elo + leaderboard', () => {
       const B = client(PORT6);
       autoPass(B, 1);
       autoPlay(B, 1);
+      // item 7.2: ranqueadas exigem 3+ humanos — C joga sem conta
+      const C = client(PORT6);
+      autoPass(C, 2);
+      autoPlay(C, 2);
 
       // contas
       const accA = await new Promise<string>((res) => {
@@ -521,10 +525,12 @@ describe('item 6a — Elo + leaderboard', () => {
       const j = await A.next((m) => m.t === 'joined', 30000, 'A joined ranked');
       B.ws.send(JSON.stringify({ t: 'join', code: j.code, name: 'Bia', accountToken: accB }));
       await B.next((m) => m.t === 'joined', 30000, 'B joined ranked');
+      sendWhenOpen(C, { t: 'join', code: j.code, name: 'Caio' });
+      await C.next((m) => m.t === 'joined', 30000, 'C joined ranked');
       A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
       await A.next((m) => m.t === 'snapshot' && m.meta!.started, 30000, 'started');
 
-      // dirige a partida inteira (4 mãos; bots nos assentos 2/3)
+      // dirige a partida inteira (4 mãos; 3 humanos + bot no assento 3)
       await A.next((m) => m.t === 'snapshot' && m.view?.phase === 'match-over', 420000, 'match-over');
 
       // o registro é assíncrono após o match-over

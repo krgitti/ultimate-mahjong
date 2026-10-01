@@ -1,5 +1,7 @@
 # 🀄 Ultimate Mahjong Online
 
+[![CI](https://github.com/krgitti/ultimate-mahjong/actions/workflows/ci.yml/badge.svg)](https://github.com/krgitti/ultimate-mahjong/actions/workflows/ci.yml)
+
 Dois jogos completos em uma aplicação web: **Mahjong Solitaire** (pares de peças livres) e
 **Mahjong tradicional de 4 jogadores** na variante **Hong Kong**, contra bots com estratégia real.
 Motor de regras independente da interface, 100% testado, sem serviços pagos, progresso salvo no navegador.
@@ -158,12 +160,13 @@ guarda o estado do PRNG — partidas são reproduzíveis a partir da semente.
 | Motor Solitaire + layouts + gerador/solucionador | `npx vitest run src/tests/solitaire.test.ts` | **47/47 ✅** |
 | Motor tradicional + pontuação + bots + esperas informativas | `npx vitest run src/tests/traditional.test.ts` | **39/39 ✅** |
 | Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur/nakasuji, replay, shanten tricotado + bot MCR irregular | `npx vitest run src/tests/rulesets.test.ts` | **35/35 ✅** |
-| MCR tabela oficial completa (81 fan): bandas, exclusões, mãos irregulares, flores, cache/multi-decomposição | `npx vitest run src/tests/mcr-full.test.ts` | **28/28 ✅** |
+| MCR tabela oficial completa (81 fan): bandas, exclusões, mãos irregulares, flores, cache/multi-decomposição, house rules | `npx vitest run src/tests/mcr-full.test.ts` | **30/30 ✅** |
 | UI de revisão de replay (linha do tempo, jsdom) | `npx vitest run src/tests/replay-ui.test.tsx` | **3/3 ✅** |
 | Migrações SQL versionadas (banco novo + banco legado) | `npx vitest run src/tests/migrate.test.ts` | **2/2 ✅** (Postgres real) |
 | App (jsdom): init, navegação, persistência, jogo real via cliques, erros | `npx vitest run src/tests/app.test.tsx` | **13/13 ✅** |
 | Editor import/export JSON | `npx vitest run src/tests/editor-io.test.ts` | **4/4 ✅** |
-| Servidor autoritativo: WS real, vazamento zero, reconexão, espectadores, Postgres/contas, fila, ranked/stats, **partida ranqueada completa → Elo zero-sum + leaderboard**, chat/emotes | `npx vitest run src/tests/server.test.ts` | **12/12 ✅** (Postgres real) |
+| Servidor autoritativo: WS real, vazamento zero, reconexão, espectadores, Postgres/contas, fila, ranked/stats, **partida ranqueada completa → Elo zero-sum + leaderboard + histórico**, chat/emotes, salas privadas, ranqueada 3+1, timer de descarte | `npx vitest run src/tests/server.test.ts` | **15/15 ✅** (Postgres real) |
+| CI GitHub Actions (unit+typecheck+build com Postgres de serviço · e2e Playwright) | automático em cada push/PR | **verde ✅** |
 | Typecheck app + servidor | `npx tsc --noEmit` / `npm run typecheck:server` | **0 erros** |
 | Build de produção | `npm run build` | **ok** (92 KB gzip) |
 | e2e Playwright (Chromium), incl. multiplayer com 2 browsers | `npx playwright test` | **7/7 ✅** |
@@ -177,6 +180,11 @@ responsividade, tratamento de erros.
 ---
 
 ## Multiplayer online — servidor autoritativo IMPLEMENTADO
+
+Inclui (pedido 7): **salas privadas com senha** (🔒), **ranqueadas com 3
+humanos + 1 bot**, **histórico de partidas + gráfico de Elo** por conta,
+**chat/emotes**, **timer de descarte com auto-discard** e notificação de
+vez (título da aba + som).
 
 Inclui (pedido 5): **fila de matchmaking** (⚡ partida rápida — 4 jogadores, regras
 não se misturam), **salas ranqueadas** por conta (🏆 resultado grava
@@ -252,7 +260,29 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
    `replayMatch(ruleset, {seed, actions})` reproduz uma mão **bit-idêntica** (teste compara
    mãos/poços/pontos/muro); o rng mulberry32 já era serializável.
 
-## O que ficou pronto nesta rodada (pedido 6)
+## O que ficou pronto nesta rodada (pedido 7)
+1. **Histórico de partidas ranqueadas**: tabela `match_history`
+   (migração `004`) — uma linha por conta por partida (data, V/D,
+   pontos, Elo antes→depois, sala). `{t:'history'}` devolve as últimas
+   N (máx. 50); painel 📜 na UI com lista detalhada e **gráfico de Elo
+   em SVG puro** (sem dependências externas).
+2. **Salas privadas + ranqueada 3+1**: senha opcional na criação
+   (guardada como sha256, persiste em restart); entrada/assistir exigem
+   a senha — token de assento e conta dispensam. Salas ranqueadas
+   começam com **3+ humanos** (vazio vira bot); Elo é zero-sum entre as
+   contas vinculadas.
+3. **Notificações de vez + timer de descarte**: online, o servidor é
+   dono do relógio (`turnExpiresAt` no snapshot, padrão 30s,
+   `discardTimeoutMs` configurável) e **descarta sozinho** se o jogador
+   estourar o prazo; a aba pisca "▶ Sua vez!" com som e a mesa mostra
+   countdown com barra. Offline, o mesmo comportamento roda na tela.
+4. **House rules MCR configuráveis**: mínimo de fan (1–88, padrão 8
+   oficial) e bônus de posição de flores (liga/desliga) nas
+   Configurações, aplicados ao motor; testados na fronteira.
+5. **CI publicado + badge**: workflow de CI ativo no GitHub Actions
+   (verde) e badge de status no topo do README.
+
+## O que ficou pronto na rodada anterior (pedido 6)
 1. **Rating Elo + leaderboard**: `server/elo.ts` (Elo round-robin de mesa,
    K=32, empates 0.5, zero-sum exato). No fim da partida ranqueada o
    servidor calcula os deltas entre as contas vinculadas e grava
@@ -321,6 +351,15 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
    `dependencies`. *O sandbox não tem Docker: a imagem não foi construída aqui — o
    comando de runtime (`npm run server`) e as migrações foram verificados direto.*
 
+## CI (GitHub Actions)
+`.github/workflows/ci.yml` roda em todo push/PR: job **unit**
+(typecheck app+servidor, `vitest run` com **Postgres 17 de serviço** —
+os testes de servidor/migrações rodam de verdade — e `npm run build`) e
+job **e2e** (Playwright/Chromium). Localmente equivale a:
+`npx tsc --noEmit && npm run typecheck:server && npx vitest run && npm run build && npx playwright test`.
+*Nota: editar o arquivo de workflow via push exige escopo OAuth
+`workflow` — pela interface web do GitHub não há restrição.*
+
 ## Hospedagem permanente (servidor)
 ```bash
 docker build -t ultimate-mahjong-server .
@@ -334,8 +373,10 @@ O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 (a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
 
 ## Próximos passos sugeridos
-1. Histórico de partidas ranqueadas por conta (últimas N + gráfico de Elo).
-2. Salas privadas com senha e opção de mesa com 3 humanos + 1 bot ranqueada.
-3. Notificações de vez (title/som) e timer de descarte com auto-discard.
-4. Mais house rules MCR configuráveis (mínimo de fan, bônus de flores).
-5. Publicar o workflow de CI (instruções na seção de hospedagem) e badges no README.
+1. Temporadas ranqueadas (reset mensal de Elo com badge de temporada).
+2. Watchdog de conexão: substituir humano ausente por bot após N segundos
+   em salas ranqueadas (hoje ele é auto-jogado passivamente).
+3. Replay online: salvar o log da partida ranqueada e oferecer revisão
+   (a UI de replay do offline já existe — conectar ao histórico).
+4. Convite por link (URL com código da sala) e cópia do código com 1 clique.
+5. i18n (EN/ES) das telas — o motor já nomes de fan em 3 idiomas.
