@@ -30,6 +30,19 @@ import { HK_DEFAULTS, HK_CHICKEN } from '../../game-engine/rules/hongkong';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
 import { t } from '../../i18n';
 import { exportReplay, parseReplay, rulesetForReplay } from './replayIO';
+
+/** item 12.3: baixa o replay como arquivo .json (amigável no celular) */
+function downloadReplay(filename: string, json: string): void {
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 import { copyText } from '../online/invite';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
@@ -267,6 +280,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   // item 9.2: replay importado (exportar/importar JSON)
   const [importedReplay, setImportedReplay] = useState<{ record: ReplayRecord; ruleset: Ruleset } | null>(null);
   const [ioMsg, setIoMsg] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null); // item 12.3
 
   // tenpai information: which tiles complete the hand and how many remain
   const waitsInfo = useMemo(() => {
@@ -756,6 +770,39 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
             >
               ⬇ {t('trad.exportReplay')}
             </button>
+            {/* item 12.3: baixar/abrir arquivo .json — levar a partida pro celular */}
+            <button
+              className="btn"
+              onClick={() => {
+                const rec = serializeReplay(s);
+                downloadReplay(`umo-replay-${rec.rulesetId}-${rec.seed}.json`, exportReplay(rec));
+                setIoMsg(t('trad.replayDownloaded'));
+              }}
+            >
+              💾 {t('trad.downloadReplay')}
+            </button>
+            <button className="btn" onClick={() => fileInputRef.current?.click()}>
+              📂 {t('trad.openReplayFile')}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json,application/json"
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (!f) return;
+                const raw = await f.text();
+                const rec = parseReplay(raw);
+                if (!rec) {
+                  setIoMsg(t('trad.importFailed'));
+                  return;
+                }
+                setImportedReplay({ record: rec, ruleset: rulesetForReplay(rec.rulesetId) });
+                setMatchOverAck(true);
+              }}
+            />
             <button
               className="btn"
               onClick={() => {
