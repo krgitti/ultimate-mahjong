@@ -152,7 +152,10 @@ export function OnlineScreen() {
   const [roomPw, setRoomPw] = useState('');
   const [joinPw, setJoinPw] = useState('');
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
-  const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number; season: string; prevSeason: string | null; prevElo: number | null } | null>(null);
+  const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number; season: string; prevSeason: string | null; prevElo: number | null; eloByRuleset?: { classic: number; riichi: number; mcr: number } } | null>(null);
+  // item 11.5: variante da fila ranqueada e da classificação
+  const [rankRs, setRankRs] = useState<'classic' | 'riichi' | 'mcr'>('classic');
+  const [lbRs, setLbRs] = useState<'classic' | 'riichi' | 'mcr'>('classic');
   const [leaderSeason, setLeaderSeason] = useState<string | null>(null);
   // item 8.4: feedback dos botões de cópia (código/link) — null = nada copiado
   const [copied, setCopied] = useState<'código' | 'link' | null>(null);
@@ -255,6 +258,7 @@ export function OnlineScreen() {
           season: String(msg.season ?? ''),
           prevSeason: msg.prevSeason ?? null,
           prevElo: msg.prevElo ?? null,
+          eloByRuleset: msg.eloByRuleset as { classic: number; riichi: number; mcr: number } | undefined,
         });
         return;
       }
@@ -498,13 +502,33 @@ export function OnlineScreen() {
           {accountToken && (
             <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>{t('on.statsBtn')}</button>
           )}
-          <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>{t('on.leaderboardBtn')}</button>
+          <select
+            value={lbRs}
+            onChange={(e) => setLbRs(e.target.value as 'classic' | 'riichi' | 'mcr')}
+            aria-label={t('on.leaderboardRuleset')}
+          >
+            <option value="classic">{t('stats.variantHK')}</option>
+            <option value="riichi">{t('stats.variantRiichi')}</option>
+            <option value="mcr">{t('stats.variantMCR')}</option>
+          </select>{' '}
+          <button className="btn" onClick={() => connect({ t: 'leaderboard', ruleset: lbRs })}>{t('on.leaderboardBtn')}</button>
+          {accountToken && (
+            <select
+              value={rankRs}
+              onChange={(e) => setRankRs(e.target.value as 'classic' | 'riichi' | 'mcr')}
+              aria-label={t('on.queueRuleset')}
+            >
+              <option value="classic">{t('stats.variantHK')}</option>
+              <option value="riichi">{t('stats.variantRiichi')}</option>
+              <option value="mcr">{t('stats.variantMCR')}</option>
+            </select>
+          )}
           {accountToken && (
             <button
               className="btn btn-primary"
               onClick={() => {
                 setRq(null);
-                connect({ t: 'queueRanked', name: name || 'Jogador', accountToken });
+                connect({ t: 'queueRanked', name: name || 'Jogador', accountToken, ruleset: rankRs });
               }}
             >
               ⚡ {t('on.queueRanked')}
@@ -523,6 +547,13 @@ export function OnlineScreen() {
           <p className="muted small" style={{ marginTop: 6 }}>
             🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
             <b>{stats.points}</b> pontos · ⭐ Elo <b>{stats.elo}</b>
+            {stats.eloByRuleset && (
+              <>
+                {' '}· {t('stats.variantHK')} <b>{stats.eloByRuleset.classic}</b>
+                {' '}· {t('stats.variantRiichi')} <b>{stats.eloByRuleset.riichi}</b>
+                {' '}· {t('stats.variantMCR')} <b>{stats.eloByRuleset.mcr}</b>
+              </>
+            )}
             {stats.season && <> · 🎖️ {t('on.season')} <b>{stats.season}</b></>}
           </p>
         )}

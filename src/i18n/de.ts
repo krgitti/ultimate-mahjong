@@ -301,6 +301,8 @@ export const de: Record<string, string> = {
   'on.qrReplay': 'Replay-QR',
   'on.qrAlt': 'QR-Code — Handykamera darauf richten, um den Link zu öffnen',
   'on.qrClose': 'QR schließen',
+  'on.queueRuleset': 'Variante der Ranglisten-Warteschlange',
+  'on.leaderboardRuleset': 'Variante der Rangliste',
   'trad.exportReplay': 'Exportieren',
   'trad.importReplay': 'Importieren',
   'trad.importPrompt': 'Füge das exportierte Replay-JSON ein:',

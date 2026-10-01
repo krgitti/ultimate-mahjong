@@ -38,7 +38,7 @@ import { HK_DEFAULTS, HK_CHICKEN } from '../src/game-engine/rules/hongkong';
 import { riichiRuleset } from '../src/game-engine/rules/riichi';
 import { mcrRuleset } from '../src/game-engine/rules/mcr';
 import { replayMatch, type TradState as _TS } from '../src/game-engine/traditional/engine';
-import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type RulesConfigId } from './store';
+import { MemoryStore, PostgresStore, rulesetKeyOf, type RoomRecord, type RoomStore, type RulesConfigId, type RulesetKey } from './store';
 import { eloDeltas, seasonKey } from './elo';
 import { serializeReplay } from '../src/game-engine/traditional/engine';
 import { pickRankedGroup } from './rankedQueue';
@@ -247,6 +247,8 @@ export function startServer(opts: ServerOptions) {
     accountId: number;
     elo: number;
     since: number;
+    /** item 11.5: variante da fila (Elo e mesas são por variante) */
+    ruleset: RulesetKey;
   }
   const rankedQueue: RankedQueueEntry[] = [];
 
@@ -256,36 +258,47 @@ export function startServer(opts: ServerOptions) {
     return (opts.rankedWindowBase ?? 150) + (opts.rankedWindowPerMin ?? 100) * minutes;
   }
 
+  function rankedSubsets(): Map<RulesetKey, RankedQueueEntry[]> {
+    const byRs = new Map<RulesetKey, RankedQueueEntry[]>();
+    for (const e of rankedQueue) {
+      const list = byRs.get(e.ruleset);
+      if (list) list.push(e);
+      else byRs.set(e.ruleset, [e]);
+    }
+    return byRs;
+  }
+
   function rankedQueueStatus() {
-    rankedQueue.forEach((e, i) =>
-      send(e.ws, {
-        t: 'queueRankedStatus',
-        position: i + 1,
-        size: rankedQueue.length,
-        elo: e.elo,
-        window: rankedWindowOf(e),
-      })
-    );
+    for (const list of rankedSubsets().values()) {
+      list.forEach((e, i) =>
+        send(e.ws, {
+          t: 'queueRankedStatus',
+          position: i + 1,
+          size: list.length,
+          elo: e.elo,
+          window: rankedWindowOf(e),
+          ruleset: e.ruleset,
+        })
+      );
+    }
   }
 
   function tryMatchRanked() {
-    const picked = pickRankedGroup(
-      rankedQueue,
-      Date.now(),
-      opts.rankedWindowBase ?? 150,
-      opts.rankedWindowPerMin ?? 100
-    );
-    if (!picked) {
-      rankedQueueStatus();
-      return;
+    // item 11.5: cada variante forma suas próprias mesas
+    for (const [rs, list] of rankedSubsets()) {
+      const picked = pickRankedGroup(list, Date.now(), opts.rankedWindowBase ?? 150, opts.rankedWindowPerMin ?? 100);
+      if (!picked) continue;
+      const group = picked.map((i) => list[i]);
+      const wsSet = new Set(group.map((g) => g.ws));
+      for (let i = rankedQueue.length - 1; i >= 0; i--) {
+        if (wsSet.has(rankedQueue[i].ws)) rankedQueue.splice(i, 1);
+      }
+      startQueuedRoom(
+        rs,
+        group.map((g) => ({ ws: g.ws, name: g.name, accountId: g.accountId })),
+        true
+      );
     }
-    const group = picked.map((i) => rankedQueue[i]);
-    for (const i of [...picked].sort((a, b) => b - a)) rankedQueue.splice(i, 1);
-    startQueuedRoom(
-      'classic',
-      group.map((g) => ({ ws: g.ws, name: g.name, accountId: g.accountId })),
-      true
-    );
     rankedQueueStatus();
   }
 
@@ -503,10 +516,11 @@ export function startServer(opts: ServerOptions) {
           const eloBefore = new Map<number, number>();
           const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
           // item 8.1: conta de temporada antiga começa a nova temporada em 1500
+          const rsKey = rulesetKeyOf(room.rulesConfig); // item 11.5
           const baseOf = (i: number) => {
             const a = accs[i];
             if (!a) return 1500;
-            return a.season && a.season !== curSeason ? 1500 : (a.elo ?? 1500);
+            return a.season && a.season !== curSeason ? 1500 : (a.eloByRuleset?.[rsKey] ?? a.elo ?? 1500);
           };
           linked.forEach((l, i) => eloBefore.set(l.accId, baseOf(i)));
           if (linked.length >= 2) {
@@ -516,7 +530,7 @@ export function startServer(opts: ServerOptions) {
           }
           for (const l of linked) {
             const win = scores[l.seat] === best;
-            await store.recordRankedResult(l.accId, win, scores[l.seat], newElo.get(l.accId), curSeason);
+            await store.recordRankedResult(l.accId, win, scores[l.seat], newElo.get(l.accId), curSeason, rsKey);
             // histórico (item 7.1): uma linha por conta por partida, mesmo
             // com <2 contas vinculadas (Elo apenas não muda)
             const before = eloBefore.get(l.accId)!;
@@ -722,7 +736,8 @@ export function startServer(opts: ServerOptions) {
           return;
         }
         const curSeason = seasonKey();
-        const elo = acc.season && acc.season !== curSeason ? 1500 : (acc.elo ?? 1500);
+        const rs: RulesetKey = msg.ruleset === 'riichi' || msg.ruleset === 'mcr' ? msg.ruleset : 'classic';
+        const elo = acc.season && acc.season !== curSeason ? 1500 : (acc.eloByRuleset?.[rs] ?? acc.elo ?? 1500);
         const existing = rankedQueue.findIndex((e) => e.ws === ws);
         if (existing >= 0) rankedQueue.splice(existing, 1);
         rankedQueue.push({
@@ -731,6 +746,7 @@ export function startServer(opts: ServerOptions) {
           accountId: acc.id,
           elo,
           since: Date.now(),
+          ruleset: rs,
         });
         tryMatchRanked();
         return;
@@ -866,6 +882,7 @@ export function startServer(opts: ServerOptions) {
           rankedWins: acc.rankedWins ?? 0,
           rankedPoints: acc.rankedPoints ?? 0,
           elo: acc.elo ?? 1500,
+          eloByRuleset: acc.eloByRuleset ?? { classic: acc.elo ?? 1500, riichi: 1500, mcr: 1500 },
           season: acc.season ?? seasonKey(),
           prevSeason: acc.prevSeason ?? null,
           prevElo: acc.prevElo ?? null,
@@ -933,8 +950,10 @@ export function startServer(opts: ServerOptions) {
 
       if (t === 'leaderboard') {
         // top accounts by Elo (public data: username + numbers only)
-        const rows = await store.leaderboard(20);
-        send(ws, { t: 'leaderboard', rows, season: seasonKey() });
+        // item 11.5: classificação por variante
+        const rs: RulesetKey = msg.ruleset === 'riichi' || msg.ruleset === 'mcr' ? msg.ruleset : 'classic';
+        const rows = await store.leaderboard(20, rs);
+        send(ws, { t: 'leaderboard', rows, season: seasonKey(), ruleset: rs });
         return;
       }
 

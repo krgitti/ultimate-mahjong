@@ -434,7 +434,9 @@ formato é versionado (`umo-replay-v1`) e o ruleset é recriado a partir dele.
   (arquivadas na virada, antes do reset).
 - **Fila ranqueada**: `⚡ Fila ranqueada (Elo)` agrupa jogadores por Elo
   próximo — a janela começa em ±150 e alarga 100/min até formar a mesa
-  (prefere 4 jogadores, aceita 3 + bot). Exige conta criada.
+  (prefere 4 jogadores, aceita 3 + bot). Exige conta criada. Desde o item
+  11.5 o Elo é **por variante** (HK/Riichi/MCR): a fila, a classificação e o
+  histórico usam o rating da variante escolhida (migração 009).
 
 ## PWA e acessibilidade
 
@@ -450,19 +452,20 @@ formato é versionado (`umo-replay-v1`) e o ruleset é recriado a partir dele.
 1. **Testes e2e do modo online completo**: cobrir uma mão inteira por
    WebSocket em Playwright (hoje os fluxos online são testados até a mesa
    montada; a mão completa é coberta em `src/tests/server.test.ts`).
-*(itens 1–5 da rodada anterior foram implementados: e2e de mão completa,
-replay no Solitaire, bots MCR por fan esperado, estatísticas por variante e
-idiomas FR/DE; sugestões atuais:)*
-1. **Revisão nativa dos idiomas**: FR/DE foram traduzidos tecnicamente —
-   vale uma revisão por falantes nativos (termos de mahjong variam).
-2. **EV do bot MCR por amostragem**: o `mcrExpectedFan` é heurístico e
-   determinístico; uma estimativa por amostragem de compras (Monte Carlo
-   leve) refinaria a escolha de descarte.
-3. **Replays casuais por link curto**: o código de replay hoje vive no
-   servidor com expiração de 30 dias; um link curto compartilhável por QR
-   facilitaria mostrar partidas no celular.
-4. **Spectator com chat**: espectadores assistem mas não interagem; um chat
-   de sala (já existe o painel) poderia aceitar mensagens de quem assiste.
-5. **Ranking por variante**: o Elo hoje é único; separar rating por ruleset
-   (HK/Riichi/MCR) daria filas mais justas.
+*(rodadas anteriores concluídas: e2e de mão completa, replay no Solitaire,
+bots MCR por fan esperado, estatísticas por variante, idiomas FR/DE, revisão
+terminológica, Monte Carlo no bot MCR, QR do convite/replay, espectadores no
+chat e ranking por variante; sugestões atuais:)*
+1. **Revisão nativa dos idiomas**: FR/DE passaram por revisão técnica de
+   terminologia (Jahreszeiten, défausse…), mas uma revisão por falantes
+   nativos segue recomendada.
+2. **Monte Carlo mais fundo no bot**: o rollout atual usa 12 amostras × 8
+   compras só para desempatar candidatos; orçamentos maiores (e defesa
+   ponderada por EV de deal-in) refinariam o jogo de fim de mão.
+3. **Pódio da temporada por variante**: o painel da temporada arquiva os
+   três Elos, mas exibe o pódio clássico; falta a alternância HK/Riichi/MCR.
+4. **Replay do online por QR já existe; falta o do tradicional offline**:
+   exportar a partida contra bots e assistir no celular.
+5. **Notificações PWA**: avisar quando a fila ranqueada encontrar mesa
+   (Notification API + push no service worker).
 

@@ -29,6 +29,8 @@ interface Snap {
   spectator?: boolean;
   error?: string;
   window?: number;
+  ruleset?: string;
+  eloByRuleset?: { classic: number; riichi: number; mcr: number };
   seat2?: never;
   position?: number;
   size?: number;
@@ -1109,6 +1111,93 @@ describe('item 9d — fila ranqueada por faixa de Elo', () => {
       await server.close();
     }
   }, 60000);
+});
+
+describe('item 11.5 — ranking por variante', () => {
+  it('WS: fila separa por ruleset — classic forma mesa, riichi segue esperando', async () => {
+    const PORT14 = 8918;
+    const server = startServer({ port: PORT14 });
+    try {
+      const A = client(PORT14);
+      const B = client(PORT14);
+      const D = client(PORT14);
+      const R = client(PORT14);
+      const sendOpen = (c: TestClient, m: unknown) => {
+        if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(m));
+        else c.ws.on('open', () => c.ws.send(JSON.stringify(m)));
+      };
+      const acc = async (c: TestClient, username: string): Promise<string> =>
+        new Promise((res) => {
+          c.ws.on('message', (raw) => {
+            const m = JSON.parse(String(raw)) as Snap;
+            if (m.t === 'account' && m.accountToken) res(m.accountToken);
+          });
+          sendOpen(c, { t: 'account', username });
+        });
+      const tA = await acc(A, 'rs-ana');
+      const tB = await acc(B, 'rs-bia');
+      const tD = await acc(D, 'rs-duda');
+      const tR = await acc(R, 'rs-raul');
+
+      // Raul entra na fila RIICHI primeiro
+      sendOpen(R, { t: 'queueRanked', name: 'Raul', accountToken: tR, ruleset: 'riichi' });
+      const stR = await R.next((m) => m.t === 'queueRankedStatus', 15000, 'R status');
+      expect(stR.position).toBe(1);
+      expect(stR.ruleset).toBe('riichi');
+
+      // Ana, Bia e Duda (classic; Duda sem ruleset explícito = classic) formam mesa entre si
+      sendOpen(A, { t: 'queueRanked', name: 'Ana', accountToken: tA, ruleset: 'classic' });
+      await A.next((m) => m.t === 'queueRankedStatus', 15000, 'A status');
+      sendOpen(B, { t: 'queueRanked', name: 'Bia', accountToken: tB });
+      await B.next((m) => m.t === 'queueRankedStatus', 15000, 'B status');
+      sendOpen(D, { t: 'queueRanked', name: 'Duda', accountToken: tD, ruleset: 'classic' });
+      await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      await B.next((m) => m.t === 'joined', 15000, 'B joined');
+      await D.next((m) => m.t === 'joined', 15000, 'D joined');
+      const snap = await A.next((m) => m.t === 'snapshot' && m.meta!.started === true, 15000, 'snap');
+      expect(snap.meta!.ranked).toBe(true);
+
+      // Raul NÃO foi arrastado: segue sozinho na fila riichi
+      const stR2 = await R.next((m) => m.t === 'queueRankedStatus', 15000, 'R status 2');
+      expect(stR2.position).toBe(1);
+      expect(stR2.size).toBe(1);
+      expect(stR2.ruleset).toBe('riichi');
+
+      // stats trazem o Elo das três variantes
+      sendOpen(R, { t: 'stats', accountToken: tR });
+      const st = await R.next((m) => m.t === 'stats', 15000, 'R stats');
+      expect(st.eloByRuleset).toBeDefined();
+      expect(st.eloByRuleset!.classic).toBe(1500);
+      expect(st.eloByRuleset!.riichi).toBe(1500);
+      expect(st.eloByRuleset!.mcr).toBe(1500);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
+
+  it('store: Elo por variante independente; virada de temporada zera as três', async () => {
+    const st = new MemoryStore();
+    await st.init();
+    const { account } = await st.createAccount('rs-mem');
+    await st.recordRankedResult(account.id, true, 10, 1520, seasonKey(), 'riichi');
+    await st.recordRankedResult(account.id, false, -8, 1490, seasonKey(), 'mcr');
+    let a = await st.accountById(account.id);
+    expect(a!.eloByRuleset!.riichi).toBe(1520);
+    expect(a!.eloByRuleset!.mcr).toBe(1490);
+    expect(a!.eloByRuleset!.classic).toBe(1500);
+    expect(a!.elo).toBe(1500); // elo clássico intacto
+
+    // virada de temporada zera as três variantes antes de aplicar o novo Elo
+    await st.recordRankedResult(account.id, true, 5, 1516, '2099-01', 'classic');
+    a = await st.accountById(account.id);
+    expect(a!.eloByRuleset).toEqual({ classic: 1516, riichi: 1500, mcr: 1500 });
+
+    // leaderboard por variante usa a coluna certa
+    const lbRiichi = await st.leaderboard(10, 'riichi');
+    expect(lbRiichi.find((r) => r.username === 'rs-mem')!.elo).toBe(1500);
+    const lbClassic = await st.leaderboard(10, 'classic');
+    expect(lbClassic.find((r) => r.username === 'rs-mem')!.elo).toBe(1516);
+  });
 });
 
 describe('item 9b — replays compartilháveis (store)', () => {

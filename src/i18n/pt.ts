@@ -301,6 +301,8 @@ export const pt: Record<string, string> = {
   'on.qrReplay': 'QR do replay',
   'on.qrAlt': 'QR code — aponte a câmera do celular para abrir o link',
   'on.qrClose': 'Fechar QR',
+  'on.queueRuleset': 'Variante da fila ranqueada',
+  'on.leaderboardRuleset': 'Variante da classificação',
   'trad.exportReplay': 'Exportar',
   'trad.importReplay': 'Importar',
   'trad.importPrompt': 'Cole o JSON do replay exportado:',
