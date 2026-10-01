@@ -5,6 +5,7 @@ import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
 import { ReplayReview } from '../traditional/ReplayReview';
 import { inviteLink, roomFromSearch, copyText, replayLink, replayCodeFromSearch, monthDaysLeft } from './invite';
+import QRCode from 'qrcode';
 import { t } from '../../i18n';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
@@ -155,6 +156,13 @@ export function OnlineScreen() {
   const [leaderSeason, setLeaderSeason] = useState<string | null>(null);
   // item 8.4: feedback dos botões de cópia (código/link) — null = nada copiado
   const [copied, setCopied] = useState<'código' | 'link' | null>(null);
+  // item 11.3: QR do convite/replay (gerado localmente, sem serviço externo)
+  const [qr, setQr] = useState<{ label: string; url: string; img: string } | null>(null);
+  const showQr = (label: string, url: string) => {
+    QRCode.toDataURL(url, { margin: 1, width: 256 })
+      .then((img) => setQr({ label, url, img }))
+      .catch(() => undefined);
+  };
   /** copia com feedback; se o navegador bloquear, pede cópia manual */
   const doCopy = async (what: 'código' | 'link', text: string) => {
     const ok = await copyText(text);
@@ -630,8 +638,18 @@ export function OnlineScreen() {
           </button>{' '}
           <button className="btn btn-sm" onClick={() => doCopy('link', inviteLink(window.location.href, code))}>
             {copied === 'link' ? t('on.copied') : t('on.copyLink')}
+          </button>{' '}
+          <button className="btn btn-sm" onClick={() => showQr(t('on.qrInvite'), inviteLink(window.location.href, code))}>
+            {t('on.qrBtn')}
           </button>
         </p>
+        {qr && (
+          <div className="panel" style={{ marginTop: 8, textAlign: 'center' }}>
+            <img src={qr.img} alt={t('on.qrAlt')} width={220} height={220} style={{ imageRendering: 'pixelated' }} />
+            <div className="muted small" style={{ wordBreak: 'break-all' }}>{qr.label} — {qr.url}</div>
+            <button className="btn btn-sm" onClick={() => setQr(null)}>{t('on.qrClose')}</button>
+          </div>
+        )}
         {lastReplayCode && (
           <p className="page-sub">
             🎬 {t('on.replayCodeTitle')} <b>{lastReplayCode}</b>{' '}
@@ -643,6 +661,9 @@ export function OnlineScreen() {
               onClick={() => doCopy('link', replayLink(window.location.href, lastReplayCode))}
             >
               {copied === 'link' ? t('on.copied') : t('on.copyLink')}
+            </button>{' '}
+            <button className="btn btn-sm" onClick={() => showQr(t('on.qrReplay'), replayLink(window.location.href, lastReplayCode))}>
+              {t('on.qrBtn')}
             </button>{' '}
             <button className="btn btn-sm" onClick={() => connect({ t: 'replayByCode', code: lastReplayCode })}>
               {t('on.review')}

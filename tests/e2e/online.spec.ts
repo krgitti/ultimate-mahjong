@@ -33,6 +33,15 @@ test.describe('online multiplayer UI (two real browser clients)', () => {
     // A sees Beto in the lobby
     await expect(pageA.getByText(/Beto/)).toBeVisible({ timeout: 10000 });
 
+    // item 11.3: QR do convite gerado localmente (data URL, sem serviço externo)
+    await pageA.getByRole('button', { name: /🔳 QR/ }).first().click();
+    const qrImg = pageA.locator('img[alt*="QR"]');
+    await expect(qrImg).toBeVisible({ timeout: 10000 });
+    const src = await qrImg.getAttribute('src');
+    expect(src?.startsWith('data:image/png')).toBe(true);
+    await pageA.getByRole('button', { name: /Fechar QR/ }).click();
+    await expect(qrImg).toHaveCount(0);
+
     // host starts; both land on the table with real hands
     await pageA.getByRole('button', { name: /Começar/ }).click();
     await expect(pageA.locator('.hand-row .hand-tile')).toHaveCount(14, { timeout: 15000 });
