@@ -40,6 +40,7 @@ import { mcrRuleset } from '../src/game-engine/rules/mcr';
 import { replayMatch, type TradState as _TS } from '../src/game-engine/traditional/engine';
 import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type RulesConfigId } from './store';
 import { eloDeltas, seasonKey } from './elo';
+import { serializeReplay } from '../src/game-engine/traditional/engine';
 import { chooseDiscard, chooseCall, type BotView } from '../src/game-engine/ai/bot';
 import { createRng } from '../src/game-engine/tiles/rng';
 import { faceIndex } from '../src/game-engine/tiles/tiles';
@@ -415,6 +416,7 @@ export function startServer(opts: ServerOptions) {
         // stats are recorded for every linked account either way.
         void (async () => {
           const curSeason = seasonKey();
+          const replay = serializeReplay(s); // item 8.3: log determinístico da partida
           const newElo = new Map<number, number>();
           const eloBefore = new Map<number, number>();
           const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
@@ -444,6 +446,7 @@ export function startServer(opts: ServerOptions) {
               eloAfter: newElo.get(l.accId) ?? before,
               roomCode: room.code,
               season: curSeason,
+              replay,
             });
           }
         })().catch((e) => console.error('ranked record failed', e));
@@ -749,6 +752,26 @@ export function startServer(opts: ServerOptions) {
         return;
       }
 
+      if (t === 'replay') {
+        // item 8.3: revisão de partida salva (histórico → ReplayReview)
+        const at = typeof msg.accountToken === 'string' ? msg.accountToken : null;
+        if (!at || typeof msg.playedAt !== 'number') {
+          send(ws, { t: 'error', error: 'Replay exige conta e partida.' });
+          return;
+        }
+        const acc = await store.accountByToken(at);
+        if (!acc) {
+          send(ws, { t: 'error', error: 'Conta inválida.' });
+          return;
+        }
+        const row = await store.historyReplay(acc.id, msg.playedAt);
+        if (!row || !row.replay) {
+          send(ws, { t: 'error', error: 'Replay indisponível para esta partida.' });
+          return;
+        }
+        send(ws, { t: 'replay', playedAt: row.playedAt, replay: row.replay });
+        return;
+      }
       if (t === 'history') {
         // últimas N partidas ranqueadas da conta (item 7.1)
         if (typeof msg.accountToken !== 'string') {

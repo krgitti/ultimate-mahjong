@@ -71,6 +71,17 @@ export interface HistoryRow {
   roomCode: string;
   /** temporada (YYYY-MM) em que a partida valeu (item 8.1) */
   season?: string;
+  /** log determinístico p/ revisão (item 8.3) */
+  replay?: ReplayPayload;
+  /** apenas flag nas listagens: há replay disponível? */
+  hasReplay?: boolean;
+}
+
+/** conteúdo de replay: regras + seed + inputs externos (item 8.3) */
+export interface ReplayPayload {
+  rulesetId: string;
+  seed: number;
+  actions: unknown[];
 }
 
 export interface LeaderRow {
@@ -97,6 +108,8 @@ export interface RoomStore {
   recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number, season?: string): Promise<void>;
   recordHistory(accountId: number, row: HistoryRow): Promise<void>;
   history(accountId: number, limit?: number): Promise<HistoryRow[]>;
+  /** busca o replay de uma partida do histórico (item 8.3) */
+  historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null>;
   leaderboard(limit?: number): Promise<LeaderRow[]>;
   close(): Promise<void>;
 }
@@ -191,7 +204,14 @@ export class MemoryStore implements RoomStore {
     this.historyRows.set(accountId, list);
   }
   async history(accountId: number, limit = 20): Promise<HistoryRow[]> {
-    return [...(this.historyRows.get(accountId) ?? [])].sort((a, b) => b.playedAt - a.playedAt).slice(0, limit);
+    // listagem não carrega o log inteiro, só a flag (item 8.3)
+    return [...(this.historyRows.get(accountId) ?? [])]
+      .sort((a, b) => b.playedAt - a.playedAt)
+      .slice(0, limit)
+      .map((r) => ({ ...r, hasReplay: !!r.replay, replay: undefined }));
+  }
+  async historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null> {
+    return (this.historyRows.get(accountId) ?? []).find((r) => r.playedAt === playedAt) ?? null;
   }
   async leaderboard(limit = 20): Promise<LeaderRow[]> {
     return [...this.accounts.values()]
@@ -324,15 +344,19 @@ export class PostgresStore implements RoomStore {
 
   async recordHistory(accountId: number, row: HistoryRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO match_history (account_id, played_at, win, points, elo_before, elo_after, room_code, season)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [accountId, row.playedAt, row.win, row.points, row.eloBefore, row.eloAfter, row.roomCode, row.season ?? seasonKey()]
+      `INSERT INTO match_history (account_id, played_at, win, points, elo_before, elo_after, room_code, season, replay)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        accountId, row.playedAt, row.win, row.points, row.eloBefore, row.eloAfter, row.roomCode,
+        row.season ?? seasonKey(),
+        row.replay ? JSON.stringify(row.replay) : null,
+      ]
     );
   }
 
   async history(accountId: number, limit = 20): Promise<HistoryRow[]> {
     const res = await this.pool.query(
-      `SELECT played_at, win, points, elo_before, elo_after, room_code, season
+      `SELECT played_at, win, points, elo_before, elo_after, room_code, season, (replay IS NOT NULL) AS has_replay
        FROM match_history WHERE account_id = $1 ORDER BY played_at DESC, id DESC LIMIT $2`,
       [accountId, limit]
     );
@@ -344,7 +368,32 @@ export class PostgresStore implements RoomStore {
       eloAfter: r.elo_after as number,
       roomCode: r.room_code as string,
       season: (r.season as string | null) ?? undefined,
+      hasReplay: r.has_replay === true,
     }));
+  }
+
+  async historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null> {
+    const res = await this.pool.query(
+      `SELECT played_at, win, points, elo_before, elo_after, room_code, season, replay
+       FROM match_history WHERE account_id = $1 AND played_at = $2 ORDER BY id DESC LIMIT 1`,
+      [accountId, playedAt]
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    const replay =
+      typeof r.replay === 'string'
+        ? (JSON.parse(r.replay) as ReplayPayload)
+        : ((r.replay as ReplayPayload | null) ?? undefined);
+    return {
+      playedAt: Number(r.played_at),
+      win: r.win as boolean,
+      points: r.points as number,
+      eloBefore: r.elo_before as number,
+      eloAfter: r.elo_after as number,
+      roomCode: r.room_code as string,
+      season: (r.season as string | null) ?? undefined,
+      replay,
+    };
   }
 
   async leaderboard(limit = 20): Promise<LeaderRow[]> {

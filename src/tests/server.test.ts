@@ -41,11 +41,14 @@ interface Snap {
   season?: string;
   prevSeason?: string | null;
   prevElo?: number | null;
+  /** resposta do fetch de replay (item 8.3) */
+  replay?: { rulesetId: string; seed: number; actions: unknown[] };
   text?: string;
   emote?: string;
   rows?: {
     username?: string; elo?: number; rankedPlayed?: number; rankedWins?: number; rankedPoints?: number;
     playedAt?: number; win?: boolean; points?: number; eloBefore?: number; eloAfter?: number; roomCode?: string; season?: string;
+    hasReplay?: boolean; replay?: { rulesetId: string; seed: number; actions: unknown[] };
   }[];
 }
 
@@ -583,6 +586,13 @@ describe('item 6a — Elo + leaderboard', () => {
       // temporada (item 8.1)
       expect(sa.season).toBe(seasonKey());
       expect(hrows[0].season).toBe(seasonKey());
+      // replay (item 8.3): a listagem sinaliza, o fetch traz o log
+      expect(hrows[0].hasReplay).toBe(true);
+      A.ws.send(JSON.stringify({ t: 'replay', accountToken: accA, playedAt: Number(hrows[0].playedAt) }));
+      const rep = await A.next((m) => m.t === 'replay', 15000, 'replay');
+      expect(rep.replay!.rulesetId).toBeTruthy();
+      expect(Number(rep.replay!.seed)).toBeGreaterThan(0);
+      expect(rep.replay!.actions.length).toBeGreaterThan(0);
       L.ws.close();
     } finally {
       await server.close();
@@ -623,13 +633,23 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(after?.prevElo).toBe(1620);
       expect(after?.elo).toBe(1516);
       // histórico (item 7.1)
-      await c.recordHistory(a1.id, { playedAt: 1000, win: true, points: 30, eloBefore: 1500, eloAfter: 1516, roomCode: 'PG01' });
+      await c.recordHistory(a1.id, { playedAt: 1000, win: true, points: 30, eloBefore: 1500, eloAfter: 1516, roomCode: 'PG01', replay: { rulesetId: 'hk', seed: 77, actions: [{ t: 'discard', seat: 0 }] } });
       await c.recordHistory(a1.id, { playedAt: 2000, win: false, points: -16, eloBefore: 1516, eloAfter: 1516, roomCode: 'PG02' });
       const h = await c.history(a1.id, 10);
       expect(h.length).toBe(2);
       expect(h[0].playedAt).toBe(2000); // mais recente primeiro
       expect(h[0].roomCode).toBe('PG02');
       expect(h[1].eloAfter).toBe(1516);
+      // replay (item 8.3): flag na listagem, payload só no fetch dedicado
+      expect(h[0].hasReplay).toBe(false);
+      expect(h[1].hasReplay).toBe(true);
+      expect(h[1].replay).toBeUndefined();
+      const full = await c.historyReplay(a1.id, 1000);
+      expect(full?.replay?.rulesetId).toBe('hk');
+      expect(full?.replay?.seed).toBe(77);
+      expect(full?.replay?.actions.length).toBe(1);
+      expect(await c.historyReplay(a1.id, 2000)).toBeTruthy(); // existe, mas sem replay
+      expect((await c.historyReplay(a1.id, 2000))?.replay).toBeUndefined();
       await c.close();
     } catch {
       ok = false;
@@ -977,4 +997,38 @@ describe('item 8b — watchdog de conexão (ranked)', () => {
       await server.close();
     }
   }, 60000);
+});
+
+describe('item 8c — replay no histórico (MemoryStore)', () => {
+  it('listagem traz hasReplay sem payload; historyReplay devolve o log', async () => {
+    const st = new MemoryStore();
+    await st.init();
+    const { account } = await st.createAccount('replay-mem');
+    await st.recordHistory(account.id, {
+      playedAt: 111,
+      win: true,
+      points: 10,
+      eloBefore: 1500,
+      eloAfter: 1516,
+      roomCode: 'R1',
+      replay: { rulesetId: 'hk', seed: 42, actions: [{ t: 'discard', seat: 0, tile: 5 }] },
+    });
+    await st.recordHistory(account.id, {
+      playedAt: 222,
+      win: false,
+      points: -10,
+      eloBefore: 1516,
+      eloAfter: 1500,
+      roomCode: 'R2',
+    });
+    const rows = await st.history(account.id, 10);
+    expect(rows.length).toBe(2);
+    expect(rows[0].hasReplay).toBe(false);
+    expect(rows[1].hasReplay).toBe(true);
+    expect(rows[1].replay).toBeUndefined();
+    const full = await st.historyReplay(account.id, 111);
+    expect(full?.replay?.seed).toBe(42);
+    expect(full?.replay?.actions.length).toBe(1);
+    expect(await st.historyReplay(account.id, 999)).toBeNull();
+  });
 });

@@ -3,6 +3,20 @@ import type { PublicState } from '../../game-engine/traditional/engine';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
+import { ReplayReview } from '../traditional/ReplayReview';
+import type { ReplayRecord } from '../../game-engine/traditional/engine';
+import type { Ruleset } from '../../game-engine/rules/ruleset';
+import { hkRuleset } from '../../game-engine/rules/ruleset';
+import { HK_DEFAULTS } from '../../game-engine/rules/hongkong';
+import { riichiRuleset } from '../../game-engine/rules/riichi';
+import { mcrRuleset } from '../../game-engine/rules/mcr';
+
+/** reconstrói o ruleset pelo id gravado no replay (mesmo conjunto do servidor) */
+function rulesetForReplay(id: string): Ruleset {
+  if (id === 'riichi') return riichiRuleset({ handsPerMatch: 4, renchan: true });
+  if (id === 'mcr') return mcrRuleset();
+  return hkRuleset(HK_DEFAULTS);
+}
 
 /** Derive the WS URL for both local dev and the Arena preview proxy. */
 export function onlineWsUrl(defaultPort = 8787): string {
@@ -49,7 +63,13 @@ interface ChatMsg {
 }
 
 /** Últimas N partidas ranqueadas + gráfico de Elo (SVG puro, sem libs) */
-function HistoryPanel({ rows }: { rows: { playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string }[] }) {
+function HistoryPanel({
+  rows,
+  onReview,
+}: {
+  rows: { playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string; hasReplay?: boolean }[];
+  onReview?: (playedAt: number) => void;
+}) {
   // série cronológica (mais antiga → mais nova) para o gráfico
   const series = [...rows].sort((a, b) => a.playedAt - b.playedAt).map((r) => r.eloAfter);
   const W = 320;
@@ -102,6 +122,15 @@ function HistoryPanel({ rows }: { rows: { playedAt: number; win: boolean; points
                     ({d > 0 ? '+' : ''}{d})
                   </span>
                 </span>
+                {r.hasReplay && onReview && (
+                  <button
+                    className="btn btn-sm"
+                    title="Rever a partida"
+                    onClick={() => onReview(r.playedAt)}
+                  >
+                    🎬 Rever
+                  </button>
+                )}
               </div>
             );
           })}
@@ -129,7 +158,9 @@ export function OnlineScreen() {
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
-  const [hist, setHist] = useState<{ playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string }[] | null>(null);
+  const [hist, setHist] = useState<{ playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string; hasReplay?: boolean }[] | null>(null);
+  // item 8.3: revisão de partida ranqueada salva (ReplayReview reutilizado)
+  const [replayView, setReplayView] = useState<{ record: ReplayRecord; ruleset: Ruleset } | null>(null);
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -208,6 +239,11 @@ export function OnlineScreen() {
       }
       if (msg.t === 'history') {
         setHist((msg.rows ?? []) as typeof hist);
+        return;
+      }
+      if (msg.t === 'replay' && msg.replay) {
+        const rec = msg.replay as ReplayRecord;
+        setReplayView({ record: rec, ruleset: rulesetForReplay(String(rec.rulesetId ?? 'hk')) });
         return;
       }
       if (msg.t === 'chat' || msg.t === 'emote') {
@@ -422,7 +458,19 @@ export function OnlineScreen() {
             a cada mês.
           </p>
         )}
-        {hist && <HistoryPanel rows={hist} />}
+        {hist && (
+          <HistoryPanel
+            rows={hist}
+            onReview={(playedAt) => connect({ t: 'replay', accountToken, playedAt })}
+          />
+        )}
+        {replayView && (
+          <ReplayReview
+            record={replayView.record}
+            ruleset={replayView.ruleset}
+            onClose={() => setReplayView(null)}
+          />
+        )}
         {leader && (
           <div className="panel" style={{ marginTop: 8 }}>
             <h3 className="panel-title">🏅 Classificação (Elo){leaderSeason ? ` — Temporada ${leaderSeason}` : ''}</h3>
