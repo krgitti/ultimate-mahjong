@@ -320,5 +320,7 @@ export const fr: Record<string, string> = {
   'on.pastSeasons': 'Saisons précédentes',
   'on.noPastSeasons': 'Aucune saison terminée pour l’instant.',
   'on.queueRanked': 'File classée (Elo)',
+  'on.tableFoundTitle': '🀄 Table trouvée !',
+  'on.tableFoundBody': 'Votre partie classée commence — revenez dans l’app.',
   'on.queueRankedStatus': 'File classée : position {p} sur {n} — votre Elo {elo}, fenêtre actuelle ±{w} (s’élargit avec l’attente).',
 };

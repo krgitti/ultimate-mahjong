@@ -320,5 +320,7 @@ export const en: Record<string, string> = {
   'on.pastSeasons': 'Past seasons',
   'on.noPastSeasons': 'No finished seasons yet.',
   'on.queueRanked': 'Ranked queue (Elo)',
+  'on.tableFoundTitle': '🀄 Table found!',
+  'on.tableFoundBody': 'Your ranked match is starting — come back to the app.',
   'on.queueRankedStatus': 'Ranked queue: position {p} of {n} — your Elo {elo}, current window ±{w} (widens while waiting).',
 };

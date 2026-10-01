@@ -320,5 +320,7 @@ export const de: Record<string, string> = {
   'on.pastSeasons': 'Frühere Saisons',
   'on.noPastSeasons': 'Noch keine beendete Saison.',
   'on.queueRanked': 'Ranglisten-Warteschlange (Elo)',
+  'on.tableFoundTitle': '🀄 Tisch gefunden!',
+  'on.tableFoundBody': 'Dein Ranglistenspiel beginnt — komm zurück in die App.',
   'on.queueRankedStatus': 'Rangliste: Position {p} von {n} — dein Elo {elo}, aktuelles Fenster ±{w} (wächst mit der Wartezeit).',
 };

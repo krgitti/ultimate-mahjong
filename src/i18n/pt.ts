@@ -320,5 +320,7 @@ export const pt: Record<string, string> = {
   'on.pastSeasons': 'Temporadas anteriores',
   'on.noPastSeasons': 'Nenhuma temporada encerrada ainda.',
   'on.queueRanked': 'Fila ranqueada (Elo)',
+  'on.tableFoundTitle': '🀄 Mesa encontrada!',
+  'on.tableFoundBody': 'Sua partida ranqueada vai começar — volte ao app.',
   'on.queueRankedStatus': 'Fila ranqueada: posição {p} de {n} — seu Elo {elo}, janela atual ±{w} (alarga com a espera).',
 };

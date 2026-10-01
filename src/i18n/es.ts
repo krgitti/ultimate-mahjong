@@ -320,5 +320,7 @@ export const es: Record<string, string> = {
   'on.pastSeasons': 'Temporadas anteriores',
   'on.noPastSeasons': 'Aún no hay temporadas terminadas.',
   'on.queueRanked': 'Cola ranked (Elo)',
+  'on.tableFoundTitle': '🀄 ¡Mesa encontrada!',
+  'on.tableFoundBody': 'Tu partida clasificatoria va a empezar: vuelve a la app.',
   'on.queueRankedStatus': 'Cola ranked: posición {p} de {n} — tu Elo {elo}, ventana actual ±{w} (se amplía esperando).',
 };

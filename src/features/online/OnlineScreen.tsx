@@ -133,6 +133,21 @@ function HistoryPanel({
   );
 }
 
+/**
+ * item 12.4: notificação local (Notification API) quando a fila ranqueada
+ * encontra mesa. Escopo honesto: sem servidor de push (VAPID) — a
+ * notificação dispara com o app aberto (mesmo em outra aba, document.hidden).
+ */
+function notifyTableFound(title: string, body: string): void {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(title, { body, tag: 'umo-table-found' });
+    }
+  } catch {
+    /* navegador sem suporte — silencioso */
+  }
+}
+
 export function OnlineScreen() {
   const [phase, setPhase] = useState<'form' | 'lobby' | 'table'>('form');
   const [name, setName] = useState(() => sessionStorage.getItem('umo.online.name') || '');
@@ -189,6 +204,7 @@ export function OnlineScreen() {
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   // item 9.4: status da fila ranqueada por Elo
   const [rq, setRq] = useState<{ position: number; size: number; elo: number; window: number } | null>(null);
+  const wasQueuedRef = useRef(false); // item 12.4: veio da fila ranqueada?
   // item 9.3: pódio das temporadas encerradas
   const [seasonHist, setSeasonHist] = useState<{ season: string; rows: { username: string; elo: number; rankedPlayed: number; rankedWins: number }[] }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
@@ -277,6 +293,11 @@ export function OnlineScreen() {
         return;
       }
       if (msg.t === 'joined') {
+        // item 12.4: mesa encontrada pela fila ranqueada → notificação local
+        if (wasQueuedRef.current) {
+          wasQueuedRef.current = false;
+          notifyTableFound(t('on.tableFoundTitle'), t('on.tableFoundBody'));
+        }
         setRq(null);
       }
       if (msg.t === 'seasonHistory') {
@@ -528,6 +549,13 @@ export function OnlineScreen() {
             <button
               className="btn btn-primary"
               onClick={() => {
+                // item 12.4: pede permissão de notificação no gesto do usuário
+                try {
+                  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                    void Notification.requestPermission();
+                  }
+                } catch { /* sem suporte */ }
+                wasQueuedRef.current = true;
                 setRq(null);
                 connect({ t: 'queueRanked', name: name || 'Jogador', accountToken, ruleset: rankRs });
               }}
