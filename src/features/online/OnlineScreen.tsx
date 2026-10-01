@@ -4,6 +4,7 @@ import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
 import { ReplayReview } from '../traditional/ReplayReview';
+import { inviteLink, roomFromSearch, copyText } from './invite';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
@@ -144,7 +145,8 @@ export function OnlineScreen() {
   const [phase, setPhase] = useState<'form' | 'lobby' | 'table'>('form');
   const [name, setName] = useState(() => sessionStorage.getItem('umo.online.name') || '');
   const [code, setCode] = useState('');
-  const [joinCode, setJoinCode] = useState('');
+  // item 8.4: convite por link (?sala=CODE) preenche o código
+  const [joinCode, setJoinCode] = useState(() => roomFromSearch(window.location.search));
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.token'));
   const [accountToken, setAccountToken] = useState<string | null>(() => sessionStorage.getItem('umo.online.accountToken'));
   const [accountName, setAccountName] = useState(() => sessionStorage.getItem('umo.online.accountName') || '');
@@ -155,6 +157,18 @@ export function OnlineScreen() {
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
   const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number; season: string; prevSeason: string | null; prevElo: number | null } | null>(null);
   const [leaderSeason, setLeaderSeason] = useState<string | null>(null);
+  // item 8.4: feedback dos botões de cópia (código/link) — null = nada copiado
+  const [copied, setCopied] = useState<'código' | 'link' | null>(null);
+  /** copia com feedback; se o navegador bloquear, pede cópia manual */
+  const doCopy = async (what: 'código' | 'link', text: string) => {
+    const ok = await copyText(text);
+    if (ok) {
+      setCopied(what);
+      setTimeout(() => setCopied(null), 2000);
+    } else {
+      window.prompt('Copie manualmente:', text);
+    }
+  };
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
@@ -271,6 +285,19 @@ export function OnlineScreen() {
     };
     ws.onclose = () => setError('Conexão fechada — recarregue para reconectar.');
   };
+
+  // item 8.4: veio de convite com nome já salvo nesta aba → entra sozinho
+  const autoJoined = useRef(false);
+  useEffect(() => {
+    if (autoJoined.current) return;
+    const invited = roomFromSearch(window.location.search);
+    const savedName = sessionStorage.getItem('umo.online.name');
+    if (invited && savedName) {
+      autoJoined.current = true;
+      connect({ t: 'join', code: invited, name: savedName });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // auto-reconnect on load when a token exists
   useEffect(() => {
@@ -519,7 +546,15 @@ export function OnlineScreen() {
           </p>
         )}
         {meta?.isPrivate && <p className="page-sub">🔒 Sala privada — quem entrar precisa da senha.</p>}
-        <p className="page-sub">Compartilhe o código <b>{code}</b>. Seu token de reconexão fica salvo nesta aba.</p>
+        <p className="page-sub">
+          Compartilhe o código <b>{code}</b>. Seu token de reconexão fica salvo nesta aba.{' '}
+          <button className="btn btn-sm" onClick={() => doCopy('código', code)}>
+            {copied === 'código' ? '✅ Copiado' : '📋 Copiar código'}
+          </button>{' '}
+          <button className="btn btn-sm" onClick={() => doCopy('link', inviteLink(window.location.href, code))}>
+            {copied === 'link' ? '✅ Copiado' : '🔗 Copiar convite'}
+          </button>
+        </p>
         <div className="panel">
           {meta?.seats.map((s2, i) => (
             <div key={i} className="row" style={{ marginBottom: 6 }}>
