@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -15,7 +19,22 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["server", "src"]
+  "include": [
+    "server",
+    "src"
+  ],
+  "exclude": [
+    "src/main.tsx",
+    "src/tests",
+    "src/features",
+    "src/i18n",
+    "src/storage",
+    "src/app",
+    "src/components",
+    "src/styles"
+  ]
 }
