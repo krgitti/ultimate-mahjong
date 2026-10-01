@@ -39,7 +39,7 @@ import { riichiRuleset } from '../src/game-engine/rules/riichi';
 import { mcrRuleset } from '../src/game-engine/rules/mcr';
 import { replayMatch, type TradState as _TS } from '../src/game-engine/traditional/engine';
 import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type RulesConfigId } from './store';
-import { eloDeltas } from './elo';
+import { eloDeltas, seasonKey } from './elo';
 import { chooseDiscard, chooseCall, type BotView } from '../src/game-engine/ai/bot';
 import { createRng } from '../src/game-engine/tiles/rng';
 import { faceIndex } from '../src/game-engine/tiles/tiles';
@@ -386,10 +386,17 @@ export function startServer(opts: ServerOptions) {
         // Elo: zero-sum across the LINKED accounts (needs at least two);
         // stats are recorded for every linked account either way.
         void (async () => {
+          const curSeason = seasonKey();
           const newElo = new Map<number, number>();
           const eloBefore = new Map<number, number>();
           const accs = await Promise.all(linked.map((l) => store.accountById(l.accId)));
-          linked.forEach((l, i) => eloBefore.set(l.accId, accs[i]?.elo ?? 1500));
+          // item 8.1: conta de temporada antiga começa a nova temporada em 1500
+          const baseOf = (i: number) => {
+            const a = accs[i];
+            if (!a) return 1500;
+            return a.season && a.season !== curSeason ? 1500 : (a.elo ?? 1500);
+          };
+          linked.forEach((l, i) => eloBefore.set(l.accId, baseOf(i)));
           if (linked.length >= 2) {
             const elos = linked.map((l) => eloBefore.get(l.accId)!);
             const deltas = eloDeltas(elos, linked.map((l) => scores[l.seat]));
@@ -397,7 +404,7 @@ export function startServer(opts: ServerOptions) {
           }
           for (const l of linked) {
             const win = scores[l.seat] === best;
-            await store.recordRankedResult(l.accId, win, scores[l.seat], newElo.get(l.accId));
+            await store.recordRankedResult(l.accId, win, scores[l.seat], newElo.get(l.accId), curSeason);
             // histórico (item 7.1): uma linha por conta por partida, mesmo
             // com <2 contas vinculadas (Elo apenas não muda)
             const before = eloBefore.get(l.accId)!;
@@ -408,6 +415,7 @@ export function startServer(opts: ServerOptions) {
               eloBefore: before,
               eloAfter: newElo.get(l.accId) ?? before,
               roomCode: room.code,
+              season: curSeason,
             });
           }
         })().catch((e) => console.error('ranked record failed', e));
@@ -705,6 +713,9 @@ export function startServer(opts: ServerOptions) {
           rankedWins: acc.rankedWins ?? 0,
           rankedPoints: acc.rankedPoints ?? 0,
           elo: acc.elo ?? 1500,
+          season: acc.season ?? seasonKey(),
+          prevSeason: acc.prevSeason ?? null,
+          prevElo: acc.prevElo ?? null,
         });
         return;
       }
@@ -729,7 +740,7 @@ export function startServer(opts: ServerOptions) {
       if (t === 'leaderboard') {
         // top accounts by Elo (public data: username + numbers only)
         const rows = await store.leaderboard(20);
-        send(ws, { t: 'leaderboard', rows });
+        send(ws, { t: 'leaderboard', rows, season: seasonKey() });
         return;
       }
 

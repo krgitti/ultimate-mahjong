@@ -31,3 +31,8 @@ export function eloDeltas(elos: number[], scores: number[], k: number = ELO_K): 
   }
   return deltas;
 }
+
+/** chave da temporada ranqueada: mês corrente (YYYY-MM) — item 8.1 */
+export function seasonKey(d: Date = new Date()): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}

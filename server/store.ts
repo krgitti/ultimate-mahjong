@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { runMigrations } from './migrate';
+import { seasonKey } from './elo';
 import pg from 'pg';
 import type { ReplayAction } from '../src/game-engine/traditional/engine';
 
@@ -55,6 +56,10 @@ export interface AccountRecord {
   rankedPoints?: number;
   /** Elo rating for ranked play (item 6) */
   elo?: number;
+  /** temporada ranqueada corrente e anterior (item 8.1) */
+  season?: string | null;
+  prevSeason?: string | null;
+  prevElo?: number | null;
 }
 
 export interface HistoryRow {
@@ -64,6 +69,8 @@ export interface HistoryRow {
   eloBefore: number;
   eloAfter: number;
   roomCode: string;
+  /** temporada (YYYY-MM) em que a partida valeu (item 8.1) */
+  season?: string;
 }
 
 export interface LeaderRow {
@@ -72,6 +79,8 @@ export interface LeaderRow {
   rankedPlayed: number;
   rankedWins: number;
   rankedPoints: number;
+  prevSeason?: string | null;
+  prevElo?: number | null;
 }
 
 export interface RoomStore {
@@ -85,7 +94,7 @@ export interface RoomStore {
   accountById(accountId: number): Promise<AccountRecord | null>;
   roomsOfAccount(accountId: number): Promise<string[]>;
   linkSeat(code: string, seat: number, accountId: number): Promise<void>;
-  recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number): Promise<void>;
+  recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number, season?: string): Promise<void>;
   recordHistory(accountId: number, row: HistoryRow): Promise<void>;
   history(accountId: number, limit?: number): Promise<HistoryRow[]>;
   leaderboard(limit?: number): Promise<LeaderRow[]>;
@@ -105,7 +114,10 @@ export class MemoryStore implements RoomStore {
   private rooms = new Map<string, RoomRecord>();
   private accounts = new Map<
     number,
-    { username: string; tokenHash: string; rankedPlayed: number; rankedWins: number; rankedPoints: number; elo: number }
+    {
+      username: string; tokenHash: string; rankedPlayed: number; rankedWins: number; rankedPoints: number; elo: number;
+      season: string | null; prevSeason: string | null; prevElo: number | null;
+    }
   >();
   private nextId = 1;
 
@@ -133,19 +145,19 @@ export class MemoryStore implements RoomStore {
     }
     const id = this.nextId++;
     const t = newToken();
-    this.accounts.set(id, { username, tokenHash: sha(t), rankedPlayed: 0, rankedWins: 0, rankedPoints: 0, elo: 1500 });
+    this.accounts.set(id, { username, tokenHash: sha(t), rankedPlayed: 0, rankedWins: 0, rankedPoints: 0, elo: 1500, season: null, prevSeason: null, prevElo: null });
     return { account: { id, username }, accountToken: t };
   }
   async accountByToken(accountToken: string): Promise<AccountRecord | null> {
     const h = sha(accountToken);
     for (const [id, a] of this.accounts)
       if (a.tokenHash === h)
-        return { id, username: a.username, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints, elo: a.elo };
+        return { id, username: a.username, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints, elo: a.elo, season: a.season, prevSeason: a.prevSeason, prevElo: a.prevElo };
     return null;
   }
   async accountById(accountId: number): Promise<AccountRecord | null> {
     const a = this.accounts.get(accountId);
-    return a ? { id: accountId, username: a.username, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints, elo: a.elo } : null;
+    return a ? { id: accountId, username: a.username, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints, elo: a.elo, season: a.season, prevSeason: a.prevSeason, prevElo: a.prevElo } : null;
   }
   async roomsOfAccount(accountId: number): Promise<string[]> {
     return [...this.rooms.values()]
@@ -156,9 +168,17 @@ export class MemoryStore implements RoomStore {
     const r = this.rooms.get(code);
     if (r?.seats[seat]) r.seats[seat] = { ...r.seats[seat]!, accountId };
   }
-  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number): Promise<void> {
+  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number, season?: string): Promise<void> {
     const a = this.accounts.get(accountId);
     if (!a) return;
+    // virada de temporada (item 8.1): arquiva o Elo anterior e volta a 1500
+    const seas = season ?? seasonKey();
+    if (a.season && a.season !== seas) {
+      a.prevSeason = a.season;
+      a.prevElo = a.elo;
+      a.elo = 1500;
+    }
+    a.season = seas;
     a.rankedPlayed++;
     if (win) a.rankedWins++;
     a.rankedPoints += pointsDelta;
@@ -175,7 +195,7 @@ export class MemoryStore implements RoomStore {
   }
   async leaderboard(limit = 20): Promise<LeaderRow[]> {
     return [...this.accounts.values()]
-      .map((a) => ({ username: a.username, elo: a.elo, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints }))
+      .map((a) => ({ username: a.username, elo: a.elo, rankedPlayed: a.rankedPlayed, rankedWins: a.rankedWins, rankedPoints: a.rankedPoints, prevSeason: a.prevSeason, prevElo: a.prevElo }))
       .sort((x, y) => y.elo - x.elo || y.rankedPlayed - x.rankedPlayed)
       .slice(0, limit);
   }
@@ -247,12 +267,15 @@ export class PostgresStore implements RoomStore {
       rankedWins: r.ranked_wins as number,
       rankedPoints: r.ranked_points as number,
       elo: r.elo as number,
+      season: (r.season as string | null) ?? null,
+      prevSeason: (r.prev_season as string | null) ?? null,
+      prevElo: (r.prev_elo as number | null) ?? null,
     };
   }
 
   async accountByToken(accountToken: string): Promise<AccountRecord | null> {
     const res = await this.pool.query(
-      'SELECT id, username, ranked_played, ranked_wins, ranked_points, elo FROM accounts WHERE token_hash = $1',
+      'SELECT id, username, ranked_played, ranked_wins, ranked_points, elo, season, prev_season, prev_elo FROM accounts WHERE token_hash = $1',
       [sha(accountToken)]
     );
     return res.rows[0] ? this.rowToAccount(res.rows[0]) : null;
@@ -260,7 +283,7 @@ export class PostgresStore implements RoomStore {
 
   async accountById(accountId: number): Promise<AccountRecord | null> {
     const res = await this.pool.query(
-      'SELECT id, username, ranked_played, ranked_wins, ranked_points, elo FROM accounts WHERE id = $1',
+      'SELECT id, username, ranked_played, ranked_wins, ranked_points, elo, season, prev_season, prev_elo FROM accounts WHERE id = $1',
       [accountId]
     );
     return res.rows[0] ? this.rowToAccount(res.rows[0]) : null;
@@ -282,29 +305,34 @@ export class PostgresStore implements RoomStore {
     );
   }
 
-  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number): Promise<void> {
+  async recordRankedResult(accountId: number, win: boolean, pointsDelta: number, newElo?: number, season?: string): Promise<void> {
+    const seas = season ?? seasonKey();
+    // virada de temporada (item 8.1): arquiva Elo e reinicia em 1500
     await this.pool.query(
-      `UPDATE accounts
-       SET ranked_played = ranked_played + 1,
-           ranked_wins = ranked_wins + $2,
-           ranked_points = ranked_points + $3,
-           elo = COALESCE($4, elo)
+      `UPDATE accounts SET
+         prev_season = CASE WHEN season IS NOT NULL AND season <> $5 THEN season ELSE prev_season END,
+         prev_elo    = CASE WHEN season IS NOT NULL AND season <> $5 THEN elo ELSE prev_elo END,
+         elo         = CASE WHEN season IS NOT NULL AND season <> $5 THEN COALESCE($4, 1500) ELSE COALESCE($4, elo) END,
+         season      = $5,
+         ranked_played = ranked_played + 1,
+         ranked_wins = ranked_wins + $2,
+         ranked_points = ranked_points + $3
        WHERE id = $1`,
-      [accountId, win ? 1 : 0, pointsDelta, newElo ?? null]
+      [accountId, win ? 1 : 0, pointsDelta, newElo ?? null, seas]
     );
   }
 
   async recordHistory(accountId: number, row: HistoryRow): Promise<void> {
     await this.pool.query(
-      `INSERT INTO match_history (account_id, played_at, win, points, elo_before, elo_after, room_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [accountId, row.playedAt, row.win, row.points, row.eloBefore, row.eloAfter, row.roomCode]
+      `INSERT INTO match_history (account_id, played_at, win, points, elo_before, elo_after, room_code, season)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [accountId, row.playedAt, row.win, row.points, row.eloBefore, row.eloAfter, row.roomCode, row.season ?? seasonKey()]
     );
   }
 
   async history(accountId: number, limit = 20): Promise<HistoryRow[]> {
     const res = await this.pool.query(
-      `SELECT played_at, win, points, elo_before, elo_after, room_code
+      `SELECT played_at, win, points, elo_before, elo_after, room_code, season
        FROM match_history WHERE account_id = $1 ORDER BY played_at DESC, id DESC LIMIT $2`,
       [accountId, limit]
     );
@@ -315,12 +343,13 @@ export class PostgresStore implements RoomStore {
       eloBefore: r.elo_before as number,
       eloAfter: r.elo_after as number,
       roomCode: r.room_code as string,
+      season: (r.season as string | null) ?? undefined,
     }));
   }
 
   async leaderboard(limit = 20): Promise<LeaderRow[]> {
     const res = await this.pool.query(
-      `SELECT username, elo, ranked_played, ranked_wins, ranked_points
+      `SELECT username, elo, ranked_played, ranked_wins, ranked_points, prev_season, prev_elo
        FROM accounts ORDER BY elo DESC, ranked_played DESC LIMIT $1`,
       [limit]
     );
@@ -330,6 +359,8 @@ export class PostgresStore implements RoomStore {
       rankedPlayed: r.ranked_played as number,
       rankedWins: r.ranked_wins as number,
       rankedPoints: r.ranked_points as number,
+      prevSeason: (r.prev_season as string | null) ?? null,
+      prevElo: (r.prev_elo as number | null) ?? null,
     }));
   }
 

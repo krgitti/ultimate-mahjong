@@ -2,8 +2,8 @@
 import { describe, it, expect } from 'vitest';
 import WebSocket from 'ws';
 import { startServer } from '../../server/main';
-import { eloDeltas } from '../../server/elo';
-import { PostgresStore } from '../../server/store';
+import { eloDeltas, seasonKey } from '../../server/elo';
+import { PostgresStore, MemoryStore } from '../../server/store';
 
 const PORT = 8899;
 
@@ -38,6 +38,9 @@ interface Snap {
   rankedWins?: number;
   rankedPoints?: number;
   elo?: number;
+  season?: string;
+  prevSeason?: string | null;
+  prevElo?: number | null;
   text?: string;
   emote?: string;
   rows?: {
@@ -577,6 +580,9 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(hrows[0].roomCode).toBe(j.code);
       expect(hrows[0].win).toBe((sa.rankedWins ?? 0) === 1);
       expect(Number(hrows[0].playedAt)).toBeGreaterThan(0);
+      // temporada (item 8.1)
+      expect(sa.season).toBe(seasonKey());
+      expect(hrows[0].season).toBe(seasonKey());
       L.ws.close();
     } finally {
       await server.close();
@@ -603,6 +609,19 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(rows[i1].elo).toBe(1516);
       const byToken = await c.accountByToken(t1);
       expect(byToken?.elo).toBe(1516);
+      // temporada (item 8.1): conta jogou em 2020-01 com Elo 1516 → nova temporada
+      await c.recordRankedResult(a1.id, true, 10, 1508, seasonKey());
+      const rolled = await c.accountById(a1.id);
+      expect(rolled?.prevSeason).toBeNull(); // primeira temporada registrada
+      expect(rolled?.season).toBe(seasonKey());
+      expect(rolled?.elo).toBe(1508);
+      // simula temporada antiga e verifica o rollover
+      await c.recordRankedResult(a1.id, false, -8, 1620, '2020-01');
+      await c.recordRankedResult(a1.id, true, 12, 1516, seasonKey());
+      const after = await c.accountById(a1.id);
+      expect(after?.prevSeason).toBe('2020-01');
+      expect(after?.prevElo).toBe(1620);
+      expect(after?.elo).toBe(1516);
       // histórico (item 7.1)
       await c.recordHistory(a1.id, { playedAt: 1000, win: true, points: 30, eloBefore: 1500, eloAfter: 1516, roomCode: 'PG01' });
       await c.recordHistory(a1.id, { playedAt: 2000, win: false, points: -16, eloBefore: 1516, eloAfter: 1516, roomCode: 'PG02' });
@@ -856,4 +875,34 @@ describe('item 7c — timer de descarte com auto-discard', () => {
       await server.close();
     }
   }, 60000);
+});
+
+describe('item 8a — temporadas ranqueadas', () => {
+  it('seasonKey: formato YYYY-MM do mês corrente (UTC)', () => {
+    expect(seasonKey()).toMatch(/^\d{4}-\d{2}$/);
+    expect(seasonKey(new Date(Date.UTC(2026, 0, 15)))).toBe('2026-01');
+    expect(seasonKey(new Date(Date.UTC(2025, 11, 31)))).toBe('2025-12');
+  });
+
+  it('MemoryStore: virada de temporada arquiva o Elo e reinicia em 1500', async () => {
+    const st = new MemoryStore();
+    await st.init();
+    const { account, accountToken } = await st.createAccount('season-tester');
+    // jogou a temporada antiga e terminou com 1700
+    await st.recordRankedResult(account.id, true, 40, 1700, '2020-01');
+    let acc = await st.accountByToken(accountToken);
+    expect(acc?.elo).toBe(1700);
+    expect(acc?.season).toBe('2020-01');
+    // primeira partida da temporada atual: Elo base vira 1500 (o store arquiva)
+    await st.recordRankedResult(account.id, false, -20, 1488, seasonKey());
+    acc = await st.accountByToken(accountToken);
+    expect(acc?.prevSeason).toBe('2020-01');
+    expect(acc?.prevElo).toBe(1700);
+    expect(acc?.elo).toBe(1488); // 1500 - 12 do exemplo
+    expect(acc?.season).toBe(seasonKey());
+    // leaderboard expõe o badge da temporada anterior
+    const rows = await st.leaderboard(10);
+    expect(rows[0].prevSeason).toBe('2020-01');
+    expect(rows[0].prevElo).toBe(1700);
+  });
 });

@@ -124,7 +124,8 @@ export function OnlineScreen() {
   const [roomPw, setRoomPw] = useState('');
   const [joinPw, setJoinPw] = useState('');
   const [queueInfo, setQueueInfo] = useState<{ position: number; size: number; rules: string } | null>(null);
-  const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number } | null>(null);
+  const [stats, setStats] = useState<{ played: number; wins: number; points: number; elo: number; season: string; prevSeason: string | null; prevElo: number | null } | null>(null);
+  const [leaderSeason, setLeaderSeason] = useState<string | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatText, setChatText] = useState('');
   const [chatOpen, setChatOpen] = useState(true);
@@ -189,11 +190,20 @@ export function OnlineScreen() {
         return;
       }
       if (msg.t === 'stats') {
-        setStats({ played: msg.rankedPlayed, wins: msg.rankedWins, points: msg.rankedPoints, elo: msg.elo ?? 1500 });
+        setStats({
+          played: msg.rankedPlayed,
+          wins: msg.rankedWins,
+          points: msg.rankedPoints,
+          elo: msg.elo ?? 1500,
+          season: String(msg.season ?? ''),
+          prevSeason: msg.prevSeason ?? null,
+          prevElo: msg.prevElo ?? null,
+        });
         return;
       }
       if (msg.t === 'leaderboard') {
         setLeader((msg.rows ?? []) as typeof leader);
+        setLeaderSeason(msg.season ? String(msg.season) : null);
         return;
       }
       if (msg.t === 'history') {
@@ -403,12 +413,19 @@ export function OnlineScreen() {
           <p className="muted small" style={{ marginTop: 6 }}>
             🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
             <b>{stats.points}</b> pontos · ⭐ Elo <b>{stats.elo}</b>
+            {stats.season && <> · 🎖️ Temporada <b>{stats.season}</b></>}
+          </p>
+        )}
+        {stats?.prevSeason && (
+          <p className="muted small" style={{ marginTop: 4 }}>
+            🎖️ Temporada {stats.prevSeason} encerrada com ⭐ <b>{stats.prevElo}</b> — o Elo reinicia
+            a cada mês.
           </p>
         )}
         {hist && <HistoryPanel rows={hist} />}
         {leader && (
           <div className="panel" style={{ marginTop: 8 }}>
-            <h3 className="panel-title">🏅 Classificação (Elo)</h3>
+            <h3 className="panel-title">🏅 Classificação (Elo){leaderSeason ? ` — Temporada ${leaderSeason}` : ''}</h3>
             {leader.length === 0 ? (
               <p className="muted small">Nenhuma conta ainda.</p>
             ) : (
