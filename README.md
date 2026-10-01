@@ -181,6 +181,12 @@ responsividade, tratamento de erros.
 
 ## Multiplayer online — servidor autoritativo IMPLEMENTADO
 
+Inclui (pedido 8): **temporadas ranqueadas mensais** (🎖️ reset de Elo com
+badge da temporada anterior), **watchdog de conexão** (em ranqueadas, ausente
+vira bot após o timeout), **replay das ranqueadas** (🎬 Rever no histórico),
+**convite por link** (`?sala=CODE` + copiar código/convite com 1 clique) e
+**i18n EN/ES** das telas.
+
 Inclui (pedido 7): **salas privadas com senha** (🔒), **ranqueadas com 3
 humanos + 1 bot**, **histórico de partidas + gráfico de Elo** por conta,
 **chat/emotes**, **timer de descarte com auto-discard** e notificação de
@@ -260,7 +266,39 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
    `replayMatch(ruleset, {seed, actions})` reproduz uma mão **bit-idêntica** (teste compara
    mãos/poços/pontos/muro); o rng mulberry32 já era serializável.
 
-## O que ficou pronto nesta rodada (pedido 7)
+## O que ficou pronto nesta rodada (pedido 8)
+0. **Mobile legível (obs do pedido)**: no celular (≤700px) as peças da mão
+   sobem para 46×62 px com scroll horizontal, mini-tiles (descartes/melds)
+   maiores, e o Solitaire ganhou o botão **🔍 Ampliar** (piso de escala 0.8
+   com tabuleiro rolável por toque — o fit puro deixava as figuras ilegíveis).
+1. **Temporadas ranqueadas**: temporada = mês calendário (`YYYY-MM`, UTC).
+   Na virada, o Elo anterior é arquivado (`prev_season`/`prev_elo`, migração
+   `005`) e o rating volta a 1500; stats mostram 🎖️ Temporada atual e o
+   resultado da anterior; classificação exibe a temporada corrente; cada
+   linha do histórico guarda a temporada da partida.
+2. **Watchdog de conexão**: em salas **ranqueadas** iniciadas, humano
+   desconectado por mais de `afkTimeoutMs` (padrão 90s) vira bot
+   (`Bot (era Nome)`) e a partida segue; o resultado continua valendo para a
+   conta vinculada. Salas casuais mantêm o comportamento antigo (assento
+   ausente e reconectável + auto-jogo passivo). Quem foi substituído não
+   retoma o assento (rejoin em partida iniciada já era bloqueado), mas pode
+   assistir como espectador.
+3. **Replay online**: no fim da partida ranqueada o servidor serializa o log
+   determinístico (seed + ações) em `match_history.replay` (migração `006`).
+   O histórico sinaliza `hasReplay`; `{t:'replay', accountToken, playedAt}`
+   devolve o log e a UI abre o **mesmo ReplayReview** do offline com o
+   ruleset reconstruído pelo id gravado.
+4. **Convite por link**: `?sala=CODE#online` preenche o código (e entra
+   sozinho se a aba já tem nome salvo); na sala, botões **📋 Copiar código**
+   e **🔗 Copiar convite** (Clipboard API com fallback textarea/execCommand e
+   prompt de cópia manual).
+5. **i18n EN/ES**: `src/i18n/` com `t(key, vars)` e fallback PT; idioma nas
+   Configurações (persistido). Traduzidos: navegação, Home, Config,
+   Estatísticas, botões do Solitaire/Tradicional e o chrome do Multiplayer.
+   **Permanecem em PT (documentado):** tutoriais e desafios, descrições
+   longas das house rules MCR e as mensagens de erro do servidor.
+
+## O que ficou pronto na rodada anterior (pedido 7)
 1. **Histórico de partidas ranqueadas**: tabela `match_history`
    (migração `004`) — uma linha por conta por partida (data, V/D,
    pontos, Elo antes→depois, sala). `{t:'history'}` devolve as últimas
