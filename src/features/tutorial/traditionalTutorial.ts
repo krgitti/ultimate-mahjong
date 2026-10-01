@@ -107,59 +107,44 @@ const humanDiscarded = (s: TradState, face: TileFace) =>
 export const TRAD_STEPS: TradTutStep[] = [
   {
     id: 'suits',
-    title: 'Os naipes',
-    coach:
-      'Sua mão tem 3 naipes numerados — Caracteres (萬), Círculos (筒) e Bambus (索) — além de ventos e dragões. ' +
-      'Clique em uma peça de cada naipe numerado para conhecê-los (3 cliques).',
+    title: 'tut.trad.suits.t',
+    coach: 'tut.trad.suits.c',
     done: (_s, ctx) => ctx.suitsClicked.size >= 3,
   },
   {
     id: 'discard',
-    title: 'Compra e descarte',
-    coach:
-      'Você é o dealer: começou com 14 peças (a peça com borda tracejada é a sua compra). ' +
-      'Sempre termine o turno descartando UMA peça. O 1 de Caracteres não ajuda em nada — descarte-o (clique duas vezes ou use o botão).',
+    title: 'tut.trad.discard.t',
+    coach: 'tut.trad.discard.c',
     done: (s) => humanDiscarded(s, f('man', 1)),
   },
   {
     id: 'call',
-    title: 'Chamadas: Chow (e Ron!)',
-    coach:
-      'O Bot Norte descartou 6 de Círculos — e ele é o jogador imediatamente antes de você. Você tem 7-8 de Círculos: ' +
-      'pode chamar CHOW (sequência), permitido apenas do jogador que joga logo antes do seu turno. ' +
-      'Repare: essa peça também completa sua mão — você poderia declarar RON (vitória) agora! Escolha: CHOW para continuar a lição, ou RON para vencer já.',
+    title: 'tut.trad.call.t',
+    coach: 'tut.trad.call.c',
     done: (s) => handEnded(s) || s.players[0].melds.some((m) => m.kind === 'chi'),
   },
   {
     id: 'discard2',
-    title: 'Descarte após a chamada',
-    coach:
-      'Após uma chamada você deve descartar. Conjuntos chamados ficam expostos na mesa. Descarte o 5 de Bambus solitário.',
+    title: 'tut.trad.discard2.t',
+    coach: 'tut.trad.discard2.c',
     done: (s) => handEnded(s) || humanDiscarded(s, f('sou', 5)),
   },
   {
     id: 'watch',
-    title: 'Vez dos oponentes',
-    coach:
-      'O turno gira no sentido anti-horário. Cada bot compra e descarta; quando alguém descarta, os outros podem chamar (Ron > Pon/Kong > Chow) — ' +
-      'ou passar. Aguarde: seus oponentes vão passar e a vez volta para você.',
+    title: 'tut.trad.watch.t',
+    coach: 'tut.trad.watch.c',
     done: (s) => handEnded(s) || (s.current === 0 && (s.phase === 'draw' || s.phase === 'discard')),
   },
   {
     id: 'tsumo',
-    title: 'Vitória: TSUMO!',
-    coach:
-      'Você comprou o 5 de Bambus — sua mão fechou: 4 conjuntos + 1 par! Quando a peça vencedora vem da SUA compra, é TSUMO (todos pagam). ' +
-      'Clique em TSUMO para vencer.',
+    title: 'tut.trad.tsumo.t',
+    coach: 'tut.trad.tsumo.c',
     done: (s) => handEnded(s),
   },
   {
     id: 'score',
-    title: 'Pontuação (fan)',
-    coach:
-      'Em Hong Kong a mão vale FAN (番): cada padrão soma fan e o pagamento dobra por fan. ' +
-      'Sua mão: Simples (sem terminais/honras) +1 e Tsumo +1 = 2 fan = 4 pontos de cada jogador. ' +
-      'Bônus (flores/estações) somam fan mas não contam para o mínimo.',
+    title: 'tut.trad.score.t',
+    coach: 'tut.trad.score.c',
     done: () => false, // final step, closed by the runner
   },
 ];

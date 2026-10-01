@@ -84,7 +84,7 @@ export function SettingsScreen({
           </select>
         </label>
         <p className="muted small" style={{ marginTop: 6 }}>
-          Aplica-se a novos jogos. Na clássica, qualquer flor combina com qualquer flor (idem estações).
+          {t('set.matchNote')}
         </p>
       </div>
 
@@ -159,16 +159,14 @@ export function SettingsScreen({
                   onChange({ traditional: { ...settings.traditional, mcrFlowerBonus: e.target.value === 'on' } })
                 }
               >
-                <option value="on">Ligado — flor/estação com o número do vento do lugar dá +1 fan</option>
-                <option value="off">Desligado — só 1 fan por flor/estação</option>
+                <option value="on">{t('set.mcrFlowerOn')}</option>
+                <option value="off">{t('set.mcrFlowerOff')}</option>
               </select>
             </label>
           </div>
         )}
         <p className="muted small" style={{ marginTop: 8 }}>
-          Limitações por nível: <b>fácil</b> quebra formas úteis e não defende; <b>médio</b> joga a melhor forma mas
-          ignora perigo e pontuação; <b>difícil</b> adiciona descarte seguro e noção de valor, sem defesa completa
-          (betaori). Aplica-se à próxima partida.
+          {t('set.botNote')}
         </p>
       </div>
     </div>

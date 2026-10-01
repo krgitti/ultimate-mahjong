@@ -12,6 +12,7 @@ import { SOLITAIRE_STEPS, TUT_FACES, TUT_POSITIONS, newTutContext, tutorialStepI
 import { BoardView } from '../solitaire/BoardView';
 import { sfx } from '../../components/sound';
 import { navigate } from '../../app/App';
+import { t } from '../../i18n';
 
 export function SolitaireTutorialRunner() {
   const gameRef = useRef<SolitaireState>(
@@ -47,58 +48,54 @@ export function SolitaireTutorialRunner() {
     msgTimer.current = window.setTimeout(() => setCoachMsg(null), 4200);
   };
 
-  const onTileClick = (t: SolTile) => {
+  const onTileClick = (tile: SolTile) => {
     if (finished) return;
-    if (!isFree(t, s.tiles)) {
-      setShakeId(t.id);
+    if (!isFree(tile, s.tiles)) {
+      setShakeId(tile.id);
       window.setTimeout(() => setShakeId(null), 300);
       sfx.error();
-      flash(
-        stepIdx === 0
-          ? 'Essa peça está BLOQUEADA: ou tem uma peça em cima, ou está presa entre vizinhas dos dois lados. Peças bloqueadas não podem ser selecionadas.'
-          : 'Peça bloqueada — escolha uma peça livre (sem cobertura e com um lado aberto).'
-      );
+      flash(t(stepIdx === 0 ? 'tut.sol.blocked0' : 'tut.sol.blocked'));
       return;
     }
     if (selectedId === null) {
-      const err = step?.allow?.({ type: 'select', tileId: t.id }, s);
+      const err = step?.allow?.({ type: 'select', tileId: tile.id }, s);
       if (err) {
-        setShakeId(t.id);
+        setShakeId(tile.id);
         window.setTimeout(() => setShakeId(null), 300);
         sfx.error();
-        flash(err);
+        flash(t(err));
         return;
       }
-      ctxRef.current.selectedDistinctSuits.add(t.face.suit);
+      ctxRef.current.selectedDistinctSuits.add(tile.face.suit);
       const completesStep = !!step?.done(s, ctxRef.current);
-      setSelectedId(t.id);
+      setSelectedId(tile.id);
       sfx.select();
       if (completesStep) {
         // the step advanced with this very selection — don't carry the tile over
         setSelectedId(null);
-        flash('Isso! Próximo passo.');
+        flash(t('tut.sol.next'));
       }
       bump();
       return;
     }
-    if (selectedId === t.id) {
+    if (selectedId === tile.id) {
       setSelectedId(null);
       return;
     }
-    const res = attemptPair(s, selectedId, t.id);
+    const res = attemptPair(s, selectedId, tile.id);
     if (res.ok) {
       ctxRef.current.pairsRemoved += 1;
-      ctxRef.current.lastPair = [selectedId, t.id];
+      ctxRef.current.lastPair = [selectedId, tile.id];
       sfx.match();
       setSelectedId(null);
       setHintIds([]);
     } else {
       s.streak = 0;
-      setShakeId(t.id);
+      setShakeId(tile.id);
       window.setTimeout(() => setShakeId(null), 300);
       sfx.error();
-      flash('Essas duas peças não formam um par compatível (mesma face, ou flor com flor / estação com estação).');
-      setSelectedId(t.id);
+      flash(t('tut.sol.notPair'));
+      setSelectedId(tile.id);
     }
     bump();
   };
@@ -130,23 +127,20 @@ export function SolitaireTutorialRunner() {
       <aside className="panel tut-coach" aria-live="polite">
         {finished ? (
           <>
-            <span className="tut-step-badge">Concluído 🎉</span>
-            <p className="tut-text">
-              Você limpou o tabuleiro! Resumo: <b>livre</b> = sem cobertura + um lado aberto; pares precisam de faces
-              compatíveis; flores combinam entre si (e estações entre si); priorize remoções que liberam peças.
-            </p>
+            <span className="tut-step-badge">{t('tut.doneBadge')}</span>
+            <p className="tut-text">{t('tut.sol.doneText')}</p>
             <div className="row" style={{ marginTop: '0.6rem' }}>
-              <button className="btn btn-primary" onClick={() => navigate('solitaire')}>Jogar Solitaire</button>
-              <button className="btn" onClick={restartTut}>Repetir tutorial</button>
+              <button className="btn btn-primary" onClick={() => navigate('solitaire')}>{t('tut.sol.play')}</button>
+              <button className="btn" onClick={restartTut}>{t('tut.repeat')}</button>
             </div>
           </>
         ) : (
           <>
             <span className="tut-step-badge">
-              Passo {stepIdx + 1} de {SOLITAIRE_STEPS.length}
+              {t('tut.stepOf', { a: stepIdx + 1, b: SOLITAIRE_STEPS.length })}
             </span>
-            <h3 style={{ margin: '0 0 0.35rem' }}>{step!.title}</h3>
-            <p className="tut-text">{step!.coach}</p>
+            <h3 style={{ margin: '0 0 0.35rem' }}>{t(step!.title)}</h3>
+            <p className="tut-text">{t(step!.coach)}</p>
             {coachMsg && <div className="tut-blocked-msg" role="alert">{coachMsg}</div>}
             <div className="tut-progress" aria-hidden="true">
               {SOLITAIRE_STEPS.map((st, i) => (
@@ -154,8 +148,8 @@ export function SolitaireTutorialRunner() {
               ))}
             </div>
             <div className="row" style={{ marginTop: '0.7rem' }}>
-              <button className="btn btn-sm" onClick={doHint}>💡 Dica</button>
-              <button className="btn btn-sm" onClick={restartTut}>Recomeçar</button>
+              <button className="btn btn-sm" onClick={doHint}>💡 {t('sol.hint')}</button>
+              <button className="btn btn-sm" onClick={restartTut}>{t('tut.restart')}</button>
             </div>
           </>
         )}

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { SolitaireLaunch } from '../../app/App';
 import { CAMPAIGN, CHALLENGES, loadCampaign, loadChallengeResults } from '../../storage/profile';
 import { Stars, fmtTime } from '../../components/ui';
+import { t } from '../../i18n';
 
 export function ChallengesScreen({ onLaunch }: { onLaunch: (l: SolitaireLaunch) => void }) {
   const campaign = loadCampaign();
@@ -10,14 +11,10 @@ export function ChallengesScreen({ onLaunch }: { onLaunch: (l: SolitaireLaunch) 
 
   return (
     <div>
-      <h1 className="page-title">Campanha & Desafios</h1>
-      <p className="page-sub">
-        A campanha tem ordem sugerida e restrições crescentes (dicas, embaralhamentos, tempo). Desafios usam{' '}
-        <strong>sementes fixas</strong>: o mesmo tabuleiro para todos — compare seu tempo. Estrelas: ★ vencer,
-        ★★ dentro do tempo-alvo, ★★★ sem usar dicas.
-      </p>
+      <h1 className="page-title">{t('ch.title')}</h1>
+      <p className="page-sub">{t('ch.sub')}</p>
 
-      <h2 style={{ fontSize: '1.1rem' }}>Campanha — {stars}/{CAMPAIGN.length * 3} ★</h2>
+      <h2 style={{ fontSize: '1.1rem' }}>{t('ch.campaign', { n: stars, m: CAMPAIGN.length * 3 })}</h2>
       <div className="grid-cards">
         {CAMPAIGN.map((level) => {
           const prog = campaign[level.id];
@@ -38,23 +35,24 @@ export function ChallengesScreen({ onLaunch }: { onLaunch: (l: SolitaireLaunch) 
               }
             >
               <span className="card-name">
-                {level.id}. {level.name}
+                {level.id}. {t(`camp.${level.id}`)}
               </span>
               <span className="card-desc">
-                Layout: {level.layoutId} · {level.timeLimitMs ? `limite ${fmtTime(level.timeLimitMs)}` : 'sem tempo'} ·{' '}
-                {level.maxHints === null ? 'dicas livres' : `${level.maxHints} dica(s)`} ·{' '}
-                {level.maxShuffles === null ? 'embaralhar livre' : `${level.maxShuffles} embaralhamento(s)`}
+                {t('ch.layout', { id: level.layoutId })} ·{' '}
+                {level.timeLimitMs ? t('ch.limit', { time: fmtTime(level.timeLimitMs) }) : t('ch.noTime')} ·{' '}
+                {level.maxHints === null ? t('ch.freeHints') : t('ch.nHints', { n: level.maxHints })} ·{' '}
+                {level.maxShuffles === null ? t('ch.freeShuffles') : t('ch.nShuffles', { n: level.maxShuffles })}
               </span>
               <span className="card-meta">
                 {prog ? <Stars n={prog.stars} /> : <Stars n={0} />}{' '}
-                {prog?.bestMs != null && <span className="muted">· melhor {fmtTime(prog.bestMs)}</span>}
+                {prog?.bestMs != null && <span className="muted">{t('ch.best', { time: fmtTime(prog.bestMs) })}</span>}
               </span>
             </button>
           );
         })}
       </div>
 
-      <h2 style={{ fontSize: '1.1rem', marginTop: '1.2rem' }}>Desafios determinísticos</h2>
+      <h2 style={{ fontSize: '1.1rem', marginTop: '1.2rem' }}>{t('ch.deterministic')}</h2>
       <div className="grid-cards">
         {CHALLENGES.map((ch) => {
           const r = results[ch.id];
@@ -73,10 +71,12 @@ export function ChallengesScreen({ onLaunch }: { onLaunch: (l: SolitaireLaunch) 
                 })
               }
             >
-              <span className="card-name">{ch.name}</span>
-              <span className="card-desc">{ch.description}</span>
+              <span className="card-name">{t(`chn.${ch.id}.n`)}</span>
+              <span className="card-desc">{t(`chn.${ch.id}.d`)}</span>
               <span className="card-meta">
-                {r?.completed ? `✔ concluído · ${r.bestMs != null ? fmtTime(r.bestMs) : '-'} · ${r.bestScore} pts` : 'não concluído'}
+                {r?.completed
+                  ? t('ch.doneMeta', { time: r.bestMs != null ? fmtTime(r.bestMs) : '-', score: r.bestScore })
+                  : t('ch.notDone')}
               </span>
             </button>
           );

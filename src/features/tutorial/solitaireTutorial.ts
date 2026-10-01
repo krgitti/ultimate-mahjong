@@ -55,32 +55,28 @@ const isTopPair = (s: SolitaireState, a: number, b: number) =>
 export const SOLITAIRE_STEPS: TutStep[] = [
   {
     id: 'free',
-    title: 'Peças livres',
-    coach:
-      'Uma peça está LIVRE quando nenhuma peça está em cima dela E pelo menos um dos lados (esquerda ou direita) está vazio. ' +
-      'Clique em qualquer peça brilhante para selecioná-la. As peças escuras estão bloqueadas — tente clicar em uma para ver o que acontece.',
+    title: 'tut.sol.free.t',
+    coach: 'tut.sol.free.c',
     highlight: (s) => s.tiles.filter((t) => !t.removed && t.pos.layer === 1 || (!t.removed && t.pos.x === 8)).map((t) => t.id),
     allow: (action, s) => {
       if (action.type === 'select') {
         const t = s.tiles[action.tileId];
         if (t.pos.layer === 1 || t.pos.x === 8) return null;
-        return 'Ainda não — nesta lição, selecione uma peça LIVRE (as destacadas).';
+        return 'tut.sol.free.e1';
       }
-      return 'Primeiro selecione uma peça livre.';
+      return 'tut.sol.free.e2';
     },
     done: (_s, ctx) => ctx.selectedDistinctSuits.size > 0,
   },
   {
     id: 'match',
-    title: 'Pares iguais',
-    coach:
-      'Peças são removidas em PARES de faces compatíveis. O seu 5 de Caracteres no topo combina com o outro 5 de Caracteres à direita. ' +
-      'Clique nele para formar o par.',
+    title: 'tut.sol.match.t',
+    coach: 'tut.sol.match.c',
     highlight: (s) => s.tiles.filter((t) => !t.removed && t.face.suit === 'man').map((t) => t.id),
     allow: (action, s) => {
       if (action.type === 'select') {
         if (s.tiles[action.tileId].face.suit === 'man') return null;
-        return 'Neste passo, forme o par de 5 de Caracteres (as peças destacadas).';
+        return 'tut.sol.match.e1';
       }
       return null;
     },
@@ -88,14 +84,13 @@ export const SOLITAIRE_STEPS: TutStep[] = [
   },
   {
     id: 'match2',
-    title: 'Flores, estações e pares',
-    coach:
-      'Agora remova o par de 7 de Círculos no topo. Regra especial: qualquer FLOR combina com qualquer flor, e qualquer ESTAÇÃO com outra estação.',
+    title: 'tut.sol.match2.t',
+    coach: 'tut.sol.match2.c',
     highlight: (s) => s.tiles.filter((t) => !t.removed && t.face.suit === 'pin').map((t) => t.id),
     allow: (action, s) => {
       if (action.type === 'select') {
         if (s.tiles[action.tileId].face.suit === 'pin') return null;
-        return 'Forme o par de 7 de Círculos para continuar.';
+        return 'tut.sol.match2.e1';
       }
       return null;
     },
@@ -103,15 +98,14 @@ export const SOLITAIRE_STEPS: TutStep[] = [
   },
   {
     id: 'layers',
-    title: 'Camadas liberam peças',
-    coach:
-      'As peças do topo saíram — veja como as peças de baixo ficaram livres! Remova o par de 3 de Bambus (canto esquerdo).',
+    title: 'tut.sol.layers.t',
+    coach: 'tut.sol.layers.c',
     highlight: (s) => s.tiles.filter((t) => !t.removed && t.face.suit === 'sou' && t.face.rank === 3).map((t) => t.id),
     allow: (action, s) => {
       if (action.type === 'select') {
         const t = s.tiles[action.tileId];
         if (t.face.suit === 'sou' && t.face.rank === 3) return null;
-        return 'Agora é a vez do par de 3 de Bambus.';
+        return 'tut.sol.layers.e1';
       }
       return null;
     },
@@ -119,16 +113,14 @@ export const SOLITAIRE_STEPS: TutStep[] = [
   },
   {
     id: 'sides',
-    title: 'Lados bloqueados',
-    coach:
-      'Mesmo sem cobertura, uma peça entre duas vizinhas continua BLOQUEADA. O 9 de Bambus do meio só ficou livre quando uma vizinhança abriu. ' +
-      'Remova o par de 9 de Bambus.',
+    title: 'tut.sol.sides.t',
+    coach: 'tut.sol.sides.c',
     highlight: (s) => s.tiles.filter((t) => !t.removed && t.face.suit === 'sou' && t.face.rank === 9).map((t) => t.id),
     allow: (action, s) => {
       if (action.type === 'select') {
         const t = s.tiles[action.tileId];
         if (t.face.suit === 'sou' && t.face.rank === 9) return null;
-        return 'Remova o par de 9 de Bambus.';
+        return 'tut.sol.sides.e1';
       }
       return null;
     },
@@ -136,10 +128,8 @@ export const SOLITAIRE_STEPS: TutStep[] = [
   },
   {
     id: 'plan',
-    title: 'Planejamento',
-    coach:
-      'Última lição: pense antes! Remover pares que LIBERAM outras peças evita ficar sem movimentos. ' +
-      'Termine o tabuleiro: restam os pares de Vento Leste e Dragão Vermelho. Você pode usar 💡 Dica se precisar.',
+    title: 'tut.sol.plan.t',
+    coach: 'tut.sol.plan.c',
     done: (s) => s.status === 'won',
   },
 ];

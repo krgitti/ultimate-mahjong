@@ -622,7 +622,7 @@ export function startServer(opts: ServerOptions) {
         // ranked rooms require an account (the creator's seat is linked)
         const wantRanked = msg.ranked === true;
         if (wantRanked && typeof msg.accountToken !== 'string') {
-          send(ws, { t: 'error', error: 'Salas ranqueadas exigem uma conta.' });
+          send(ws, { t: 'error', error: 'Salas ranqueadas exigem uma conta.', code: 'err.rankedNeedsAccount' });
           return;
         }
         const state = newMatch(rules, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, [
@@ -677,7 +677,7 @@ export function startServer(opts: ServerOptions) {
         const key: RulesConfigId =
           msg.rules === 'riichi' || msg.rules === 'chicken' || msg.rules === 'mcr' ? msg.rules : 'classic';
         if (myRoom) {
-          send(ws, { t: 'error', error: 'Você já está em uma sala.' });
+          send(ws, { t: 'error', error: 'Você já está em uma sala.', code: 'err.alreadyInRoom' });
           return;
         }
         let accountId: number | null = null;
@@ -730,12 +730,12 @@ export function startServer(opts: ServerOptions) {
 
       if (t === 'stats') {
         if (typeof msg.accountToken !== 'string') {
-          send(ws, { t: 'error', error: 'Conta não informada.' });
+          send(ws, { t: 'error', error: 'Conta não informada.', code: 'err.accountMissing' });
           return;
         }
         const acc = await store.accountByToken(msg.accountToken);
         if (!acc) {
-          send(ws, { t: 'error', error: 'Conta não encontrada.' });
+          send(ws, { t: 'error', error: 'Conta não encontrada.', code: 'err.accountNotFound' });
           return;
         }
         send(ws, {
@@ -756,17 +756,17 @@ export function startServer(opts: ServerOptions) {
         // item 8.3: revisão de partida salva (histórico → ReplayReview)
         const at = typeof msg.accountToken === 'string' ? msg.accountToken : null;
         if (!at || typeof msg.playedAt !== 'number') {
-          send(ws, { t: 'error', error: 'Replay exige conta e partida.' });
+          send(ws, { t: 'error', error: 'Replay exige conta e partida.', code: 'err.replayNeedsAccount' });
           return;
         }
         const acc = await store.accountByToken(at);
         if (!acc) {
-          send(ws, { t: 'error', error: 'Conta inválida.' });
+          send(ws, { t: 'error', error: 'Conta inválida.', code: 'err.accountInvalid' });
           return;
         }
         const row = await store.historyReplay(acc.id, msg.playedAt);
         if (!row || !row.replay) {
-          send(ws, { t: 'error', error: 'Replay indisponível para esta partida.' });
+          send(ws, { t: 'error', error: 'Replay indisponível para esta partida.', code: 'err.replayUnavailable' });
           return;
         }
         send(ws, { t: 'replay', playedAt: row.playedAt, replay: row.replay });
@@ -775,12 +775,12 @@ export function startServer(opts: ServerOptions) {
       if (t === 'history') {
         // últimas N partidas ranqueadas da conta (item 7.1)
         if (typeof msg.accountToken !== 'string') {
-          send(ws, { t: 'error', error: 'Conta não informada.' });
+          send(ws, { t: 'error', error: 'Conta não informada.', code: 'err.accountMissing' });
           return;
         }
         const acc = await store.accountByToken(msg.accountToken);
         if (!acc) {
-          send(ws, { t: 'error', error: 'Conta não encontrada.' });
+          send(ws, { t: 'error', error: 'Conta não encontrada.', code: 'err.accountNotFound' });
           return;
         }
         const limit = Math.min(50, Math.max(1, Number(msg.limit) || 20));
@@ -801,7 +801,7 @@ export function startServer(opts: ServerOptions) {
         // the server stores only its hash). Enables cross-device rejoin.
         const username = String(msg.username || '').trim().slice(0, 32);
         if (!username) {
-          send(ws, { t: 'error', error: 'Nome de conta inválido.' });
+          send(ws, { t: 'error', error: 'Nome de conta inválido.', code: 'err.accountNameInvalid' });
           return;
         }
         const { account, accountToken } = await store.createAccount(username);
@@ -814,11 +814,11 @@ export function startServer(opts: ServerOptions) {
         // snapshots as players, minus any private hand, and cannot act.
         const room = await findRoom(String(msg.code || ''));
         if (!room) {
-          send(ws, { t: 'error', error: 'Sala não encontrada.' });
+          send(ws, { t: 'error', error: 'Sala não encontrada.', code: 'err.roomNotFound' });
           return;
         }
         if (wrongPassword(room, msg)) {
-          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.' });
+          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.', code: 'err.wrongPassword' });
           return;
         }
         room.spectators.push({ ws, name: String(msg.name || 'Espectador') });
@@ -852,18 +852,18 @@ export function startServer(opts: ServerOptions) {
               }
             }
           }
-          send(ws, { t: 'error', error: 'Nenhuma sala ativa para esta conta.' });
+          send(ws, { t: 'error', error: 'Nenhuma sala ativa para esta conta.', code: 'err.noActiveRoom' });
           return;
         }
         const room = await findRoom(String(msg.code || ''));
         const tok = msg.token as string | undefined;
         if (!room) {
-          send(ws, { t: 'error', error: 'Sala não encontrada.' });
+          send(ws, { t: 'error', error: 'Sala não encontrada.', code: 'err.roomNotFound' });
           return;
         }
         // token de assento é credencial suficiente — senha só para entrada nova
         if (!tok && wrongPassword(room, msg)) {
-          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.' });
+          send(ws, { t: 'error', error: 'Sala privada — senha incorreta.', code: 'err.wrongPassword' });
           return;
         }
         // reconnection by token?
@@ -905,7 +905,7 @@ export function startServer(opts: ServerOptions) {
 
       if (!myRoom) return;
       if (spectating || mySeat < 0) {
-        if (t === 'action' || t === 'start') send(ws, { t: 'error', error: 'Espectadores não podem jogar.' });
+        if (t === 'action' || t === 'start') send(ws, { t: 'error', error: 'Espectadores não podem jogar.', code: 'err.spectatorCannotPlay' });
         return;
       }
       const room = myRoom;
@@ -917,7 +917,7 @@ export function startServer(opts: ServerOptions) {
         // humanos o resultado não é competitivo; o assento vazio vira bot.
         const humans = room.seats.filter((x) => x !== null).length;
         if (room.ranked && humans < 3) {
-          send(ws, { t: 'error', error: 'Salas ranqueadas exigem pelo menos 3 jogadores humanos.' });
+          send(ws, { t: 'error', error: 'Salas ranqueadas exigem pelo menos 3 jogadores humanos.', code: 'err.rankedNeeds3' });
           return;
         }
         const fillBots = room.ranked ? true : msg.fillBots !== false;
@@ -941,7 +941,7 @@ export function startServer(opts: ServerOptions) {
             if (discard(s, a.tileId)) {
               room.callWaitingSince = Date.now();
               broadcast(room);
-            } else send(ws, { t: 'error', error: 'Descarte ilegal.' });
+            } else send(ws, { t: 'error', error: 'Descarte ilegal.', code: 'err.illegalDiscard' });
           } else if (a.kind === 'tsumo') {
             if (declareTsumo(s, mySeat)) broadcast(room);
           } else if (a.kind === 'riichi') {

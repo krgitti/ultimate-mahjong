@@ -12,6 +12,7 @@ import {
   type CallDecision,
 } from '../../game-engine/traditional/engine';
 import { createTutorialMatch, TRAD_STEPS, tradStepIndex, type TradTutContext } from './traditionalTutorial';
+import { t } from '../../i18n';
 import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { sfx } from '../../components/sound';
@@ -95,9 +96,9 @@ export function TradTutorialRunner() {
         ctxRef.current.suitsClicked.add(face.suit);
         setSelectedTile(id);
         sfx.select();
-        flash(`Este é o naipe ${faceName(face)}.`);
+        flash(t('tut.trad.suitClick', { suit: faceName(face) }));
       } else {
-        flash('Ventos e dragões são honras — clique primeiro em um Caractere (萬), um Círculo (筒) e um Bambu (索).');
+        flash(t('tut.trad.honors'));
       }
       bump();
       return;
@@ -114,17 +115,17 @@ export function TradTutorialRunner() {
     if (!humanTurn) return;
     const face = faceOf(s, id);
     if (stepIdx === 1 && !(face.suit === 'man' && face.rank === 1)) {
-      flash('Neste passo, descarte o 1 de Caracteres (a peça que não combina com nada).');
+      flash(t('tut.trad.discard1err'));
       sfx.error();
       return;
     }
     if (stepIdx === 3 && !(face.suit === 'sou' && face.rank === 5)) {
-      flash('Agora descarte o 5 de Bambus solitário — ele não forma par nem sequência.');
+      flash(t('tut.trad.discard5err'));
       sfx.error();
       return;
     }
     if (stepIdx !== 1 && stepIdx !== 3) {
-      flash('Nenhum descarte é necessário neste passo.');
+      flash(t('tut.trad.noDiscard'));
       return;
     }
     if (discard(s, id)) {
@@ -147,10 +148,10 @@ export function TradTutorialRunner() {
     <div className="tut-layout">
       <aside className="panel tut-coach" aria-live="polite">
         <span className="tut-step-badge">
-          Passo {Math.min(stepIdx + 1, TRAD_STEPS.length)} de {TRAD_STEPS.length}
+          {t('tut.stepOf', { a: Math.min(stepIdx + 1, TRAD_STEPS.length), b: TRAD_STEPS.length })}
         </span>
-        <h3 style={{ margin: '0 0 0.35rem' }}>{step.title}</h3>
-        <p className="tut-text">{step.coach}</p>
+        <h3 style={{ margin: '0 0 0.35rem' }}>{t(step.title)}</h3>
+        <p className="tut-text">{t(step.coach)}</p>
         {msg && <div className="tut-blocked-msg" role="alert">{msg}</div>}
         <div className="tut-progress" aria-hidden="true">
           {TRAD_STEPS.map((st, i) => (
@@ -166,7 +167,7 @@ export function TradTutorialRunner() {
               </div>
             ))}
             <div className="fan-row">
-              <span>Pontos (cada jogador paga)</span>
+              <span>{t('tut.trad.pointsRow')}</span>
               <b>{s.result.scoring.points}</b>
             </div>
           </div>
@@ -174,7 +175,7 @@ export function TradTutorialRunner() {
         {stepIdx >= TRAD_STEPS.length - 1 && (
           <div className="row" style={{ marginTop: '0.7rem' }}>
             <button className="btn btn-primary" onClick={() => navigate('traditional')}>
-              Jogar partida completa
+              {t('tut.trad.playFull')}
             </button>
           </div>
         )}
@@ -182,8 +183,8 @@ export function TradTutorialRunner() {
 
       <section className="panel">
         <div className="row-between small muted">
-          <span>Vento dominante: <b>{WIND_PT[s.roundWind]}</b> · Seu vento: {WIND_PT[seatWindOf(s, 0)]}</span>
-          <span>Muro: {s.wall.length}</span>
+          <span>{t('tut.trad.winds', { dom: WIND_PT[s.roundWind], seat: WIND_PT[seatWindOf(s, 0)] })}</span>
+          <span>{t('tut.trad.wall', { n: s.wall.length })}</span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, margin: '0.5rem 0' }}>
@@ -208,7 +209,7 @@ export function TradTutorialRunner() {
             </div>
           ))}
           <div className="seat-panel">
-            <div className="pond-label muted small">Seus descartes</div>
+            <div className="pond-label muted small">{t('tut.trad.yourDiscards')}</div>
             <div className="pond">
               {me.discards.map((id) => (
                 <span key={id} className="mini-tile"><TileFaceArt face={faceOf(s, id)} /></span>
@@ -249,7 +250,7 @@ export function TradTutorialRunner() {
               disabled={!humanTurn || selectedTile === null}
               onClick={() => selectedTile !== null && tryDiscard(selectedTile)}
             >
-              🀫 Descartar {stepIdx === 1 ? '1 de Caracteres' : '5 de Bambus'}
+              🀫 {t('tut.trad.discardBtn', { tile: stepIdx === 1 ? t('tiles.1man') : t('tiles.5sou') })}
             </button>
           )}
           {canWin && (
@@ -261,27 +262,27 @@ export function TradTutorialRunner() {
                 bump();
               }}
             >
-              🏆 TSUMO!
+              🏆 {t('tut.trad.tsumoBtn')}
             </button>
           )}
           {showCallButtons && (
             <>
               {humanOffers.some((o) => o.kind === 'ron') && (
                 <button className="btn btn-primary btn-sm" onClick={() => answer({ offer: humanOffers.find((o) => o.kind === 'ron')! })}>
-                  🏆 RON (vencer agora)
+                  🏆 {t('tut.trad.ronBtn')}
                 </button>
               )}
               {humanOffers.filter((o) => o.kind === 'chi').flatMap((o) =>
                 (o.chiOptions ?? []).map((opt, i) => (
                   <button key={i} className="btn btn-sm" onClick={() => answer({ offer: o, chiChoice: opt })}>
-                    Chow com {(opt.map((id) => faceOf(s, id)) as TileFace[]).map((x) => faceName(x)).join(' + ')}
+                    {t('tut.trad.chowBtn', { tiles: (opt.map((id) => faceOf(s, id)) as TileFace[]).map((x) => faceName(x)).join(' + ') })}
                   </button>
                 ))
               )}
             </>
           )}
-          {s.phase === 'calls' && !showCallButtons && <span className="muted small">Oponentes decidindo…</span>}
-          {ended && <span className="muted small">Mão encerrada — veja a pontuação ao lado.</span>}
+          {s.phase === 'calls' && !showCallButtons && <span className="muted small">{t('tut.trad.deciding')}</span>}
+          {ended && <span className="muted small">{t('tut.trad.ended')}</span>}
         </div>
       </section>
     </div>

@@ -181,7 +181,8 @@ export function OnlineScreen() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [actions, setActions] = useState<MyActions>({ legal: [], canTsumo: false, canRiichi: false });
   const [mySeat, setMySeat] = useState(-1);
-  const [error, setError] = useState<string | null>(null);
+  // erro do servidor vem com `code` (item 9.1): exibimos a tradução do código
+  const [error, setError] = useState<{ code?: string; text: string } | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -281,10 +282,10 @@ export function OnlineScreen() {
         setPhase(msg.meta.started ? 'table' : 'lobby');
         setCode(msg.meta.code);
       } else if (msg.t === 'error') {
-        setError(msg.error);
+        setError(msg.code ? { code: String(msg.code), text: String(msg.error ?? '') } : { text: String(msg.error) });
       }
     };
-    ws.onclose = () => setError('Conexão fechada — recarregue para reconectar.');
+    ws.onclose = () => setError({ code: 'err.connectionClosed', text: '' });
   };
 
   // item 8.4: veio de convite com nome já salvo nesta aba → entra sozinho
@@ -518,7 +519,7 @@ export function OnlineScreen() {
             Conta <b>{accountName}</b> ativa — suas salas podem ser retomadas em outro dispositivo.
           </p>
         )}
-        {error && <p style={{ color: '#ffd9d7', marginTop: 10 }}>{error}</p>}
+        {error && <p style={{ color: '#ffd9d7', marginTop: 10 }}>{error.code ? t(error.code) : error.text}</p>}
         <p className="muted small" style={{ marginTop: 14 }}>
           Requer o servidor rodando: <code>npm run server</code> (porta 8787). Sem contas, sem banco remoto —
           o estado vive no processo do servidor enquanto ele estiver ativo.
@@ -569,7 +570,7 @@ export function OnlineScreen() {
           </div>
         )}
         {chatPanel}
-        {error && <p style={{ color: '#ffd9d7' }}>{error}</p>}
+        {error && <p style={{ color: '#ffd9d7' }}>{error.code ? t(error.code) : error.text}</p>}
       </div>
     );
   }
