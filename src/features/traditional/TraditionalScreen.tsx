@@ -242,6 +242,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
           selfDrawn: !!s.result.selfDrawn,
           fan: s.result.scoring?.totalFan ?? 0,
           points: s.result.scoring?.points ?? 0,
+          rulesetId: settings.traditional.rules,
         });
       }
       bump();
@@ -249,7 +250,7 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
     if (s.phase === 'match-over' && !recordedMatchRef.current) {
       recordedMatchRef.current = true;
       const best = Math.max(...s.players.map((p) => p.score));
-      recordTraditionalMatch(s.players[0].score === best && best > 0);
+      recordTraditionalMatch(s.players[0].score === best && best > 0, settings.traditional.rules);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.phase, s.result]);

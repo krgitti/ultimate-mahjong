@@ -74,8 +74,35 @@ export interface Stats {
     ronWins: number;
     tsumoWins: number;
     totalPoints: number;
+    /** item 10.4: recorte por variante (HK clássica/chicken, Riichi, MCR) */
+    byRuleset: Record<TradRulesetKey, RulesetStats>;
   };
 }
+
+export type TradRulesetKey = 'classic' | 'riichi' | 'mcr';
+
+export interface RulesetStats {
+  handsPlayed: number;
+  handsWon: number;
+  matchesPlayed: number;
+  matchesWon: number;
+  bestFan: number;
+  bestPoints: number;
+}
+
+/** normaliza o ruleset configurado para a chave de estatística (chicken → classic) */
+export function normalizeRulesetKey(id: string | undefined): TradRulesetKey {
+  return id === 'riichi' || id === 'mcr' ? id : 'classic';
+}
+
+const EMPTY_RULESET_STATS: RulesetStats = {
+  handsPlayed: 0,
+  handsWon: 0,
+  matchesPlayed: 0,
+  matchesWon: 0,
+  bestFan: 0,
+  bestPoints: 0,
+};
 
 export const DEFAULT_STATS: Stats = {
   solitaire: {
@@ -99,6 +126,11 @@ export const DEFAULT_STATS: Stats = {
     ronWins: 0,
     tsumoWins: 0,
     totalPoints: 0,
+    byRuleset: {
+      classic: { ...EMPTY_RULESET_STATS },
+      riichi: { ...EMPTY_RULESET_STATS },
+      mcr: { ...EMPTY_RULESET_STATS },
+    },
   },
 };
 
@@ -106,7 +138,15 @@ export function loadStats(): Stats {
   const s = store.read<Partial<Stats>>(KEYS.stats, {});
   return {
     solitaire: { ...DEFAULT_STATS.solitaire, ...(s.solitaire ?? {}) },
-    traditional: { ...DEFAULT_STATS.traditional, ...(s.traditional ?? {}) },
+    traditional: {
+      ...DEFAULT_STATS.traditional,
+      ...(s.traditional ?? {}),
+      byRuleset: {
+        classic: { ...EMPTY_RULESET_STATS, ...(s.traditional?.byRuleset?.classic ?? {}) },
+        riichi: { ...EMPTY_RULESET_STATS, ...(s.traditional?.byRuleset?.riichi ?? {}) },
+        mcr: { ...EMPTY_RULESET_STATS, ...(s.traditional?.byRuleset?.mcr ?? {}) },
+      },
+    },
   };
 }
 
@@ -145,10 +185,13 @@ export function recordTraditionalHand(r: {
   selfDrawn: boolean;
   fan: number;
   points: number;
+  rulesetId?: string;
 }): Stats {
   const st = loadStats();
   const t = st.traditional;
   t.handsPlayed += 1;
+  const v = t.byRuleset[normalizeRulesetKey(r.rulesetId)];
+  v.handsPlayed += 1;
   if (r.humanWon) {
     t.handsWon += 1;
     t.bestFan = Math.max(t.bestFan, r.fan);
@@ -156,15 +199,23 @@ export function recordTraditionalHand(r: {
     t.totalPoints += r.points;
     if (r.selfDrawn) t.tsumoWins += 1;
     else t.ronWins += 1;
+    v.handsWon += 1;
+    v.bestFan = Math.max(v.bestFan, r.fan);
+    v.bestPoints = Math.max(v.bestPoints, r.points);
   }
   saveStats(st);
   return st;
 }
 
-export function recordTraditionalMatch(won: boolean): Stats {
+export function recordTraditionalMatch(won: boolean, rulesetId?: string): Stats {
   const st = loadStats();
   st.traditional.matchesPlayed += 1;
-  if (won) st.traditional.matchesWon += 1;
+  const v = st.traditional.byRuleset[normalizeRulesetKey(rulesetId)];
+  v.matchesPlayed += 1;
+  if (won) {
+    st.traditional.matchesWon += 1;
+    v.matchesWon += 1;
+  }
   saveStats(st);
   return st;
 }

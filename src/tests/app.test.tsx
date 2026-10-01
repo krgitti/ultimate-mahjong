@@ -5,7 +5,15 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { App } from '../app/App';
 import { store, KEYS, MemoryStorage, Store } from '../storage/storage';
-import { DEFAULT_SETTINGS, loadSettings, saveSettings, loadStats, recordSolitaireResult } from '../storage/profile';
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  saveSettings,
+  loadStats,
+  recordSolitaireResult,
+  recordTraditionalHand,
+  recordTraditionalMatch,
+} from '../storage/profile';
 
 // Use an in-memory adapter so tests never touch a real localStorage.
 const mem = new MemoryStorage();
@@ -216,5 +224,39 @@ describe('item 9.7 — acessibilidade da mesa (teclado)', () => {
       { timeout: 5000 }
     );
     expect(document.querySelectorAll('.pond .mini-tile:not(.back)').length).toBeGreaterThan(0);
+  });
+});
+
+describe('item 10.4 — estatísticas por variante', () => {
+  it('separa mãos e partidas por ruleset (chicken conta como classic)', () => {
+    recordTraditionalHand({ humanWon: true, selfDrawn: true, fan: 5, points: 30, rulesetId: 'mcr' });
+    recordTraditionalHand({ humanWon: false, selfDrawn: false, fan: 0, points: 0, rulesetId: 'riichi' });
+    recordTraditionalHand({ humanWon: true, selfDrawn: false, fan: 3, points: 10, rulesetId: 'chicken' });
+    recordTraditionalMatch(true, 'mcr');
+    const st = loadStats();
+    expect(st.traditional.handsPlayed).toBe(3); // totais agregados seguem valendo
+    expect(st.traditional.byRuleset.mcr.handsWon).toBe(1);
+    expect(st.traditional.byRuleset.mcr.bestFan).toBe(5);
+    expect(st.traditional.byRuleset.mcr.matchesWon).toBe(1);
+    expect(st.traditional.byRuleset.classic.handsWon).toBe(1);
+    expect(st.traditional.byRuleset.riichi.handsPlayed).toBe(1);
+    expect(st.traditional.byRuleset.riichi.handsWon).toBe(0);
+  });
+
+  it('stats legados (sem byRuleset) carregam com zeros', () => {
+    store.write(KEYS.stats, { traditional: { handsPlayed: 7 } });
+    const st = loadStats();
+    expect(st.traditional.handsPlayed).toBe(7);
+    expect(st.traditional.byRuleset.mcr.handsPlayed).toBe(0);
+    expect(st.traditional.byRuleset.classic.handsPlayed).toBe(0);
+  });
+
+  it('página de estatísticas exibe as três variantes', async () => {
+    recordTraditionalHand({ humanWon: true, selfDrawn: false, fan: 8, points: 40, rulesetId: 'mcr' });
+    window.location.hash = '#stats';
+    render(<App />);
+    expect(await screen.findByText(/Por variante/i)).toBeInTheDocument();
+    expect(screen.getByText(/Riichi \(japonês\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/MCR \(competição\)/i)).toBeInTheDocument();
   });
 });

@@ -42,6 +42,35 @@ export function StatsScreen() {
           <div className="stat"><div className="stat-label">{t('stats.matchesWon')}</div><div className="stat-value">{tr.matchesWon}</div></div>
         </div>
       </div>
+
+      <div className="panel" style={{ marginTop: '0.9rem' }}>
+        <h3 className="panel-title">{t('stats.byRuleset')}</h3>
+        {(['classic', 'riichi', 'mcr'] as const).map((k) => {
+          const v = tr.byRuleset[k];
+          const rate = v.handsPlayed ? Math.round((v.handsWon / v.handsPlayed) * 100) : 0;
+          const label = k === 'classic' ? t('stats.variantHK') : k === 'riichi' ? t('stats.variantRiichi') : t('stats.variantMCR');
+          return (
+            <div key={k} style={{ marginBottom: 10 }}>
+              <div className="small" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <b>{label}</b>
+                <span className="muted">{rate}%</span>
+              </div>
+              <div
+                role="img"
+                aria-label={`${label}: ${v.handsWon} de ${v.handsPlayed} mãos vencidas`}
+                style={{ height: 8, background: 'rgba(127,127,127,0.25)', borderRadius: 4, overflow: 'hidden' }}
+              >
+                <div style={{ width: `${rate}%`, height: '100%', background: 'var(--gold, #d4af37)', borderRadius: 4 }} />
+              </div>
+              <div className="muted small">
+                {t('stats.handsPlayed')}: {v.handsPlayed} · {t('stats.handsWon')}: {v.handsWon} ·{' '}
+                {t('stats.matchesPlayed')}: {v.matchesPlayed} · {t('stats.matchesWon')}: {v.matchesWon} ·{' '}
+                {t('stats.bestFan')}: {v.bestFan}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
