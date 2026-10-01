@@ -304,4 +304,6 @@ export const en: Record<string, string> = {
   'on.seasonEnding': 'The season ends in {n} day(s) — next month Elo resets to 1500 and the standings are archived.',
   'on.pastSeasons': 'Past seasons',
   'on.noPastSeasons': 'No finished seasons yet.',
+  'on.queueRanked': 'Ranked queue (Elo)',
+  'on.queueRankedStatus': 'Ranked queue: position {p} of {n} — your Elo {elo}, current window ±{w} (widens while waiting).',
 };

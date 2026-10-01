@@ -41,6 +41,7 @@ import { replayMatch, type TradState as _TS } from '../src/game-engine/tradition
 import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type RulesConfigId } from './store';
 import { eloDeltas, seasonKey } from './elo';
 import { serializeReplay } from '../src/game-engine/traditional/engine';
+import { pickRankedGroup } from './rankedQueue';
 import { chooseDiscard, chooseCall, type BotView } from '../src/game-engine/ai/bot';
 import { createRng } from '../src/game-engine/tiles/rng';
 import { faceIndex } from '../src/game-engine/tiles/tiles';
@@ -55,6 +56,9 @@ export interface ServerOptions {
   discardTimeoutMs?: number;
   /** ranked: segundos... (ms) antes de substituir humano ausente por bot (item 8.2) */
   afkTimeoutMs?: number;
+  /** fila ranqueada (item 9.4): janela de Elo inicial e alargamento por minuto */
+  rankedWindowBase?: number;
+  rankedWindowPerMin?: number;
 }
 
 interface Session {
@@ -221,6 +225,11 @@ export function startServer(opts: ServerOptions) {
   }
 
   function removeFromQueue(ws: WebSocket) {
+    const ri = rankedQueue.findIndex((e) => e.ws === ws);
+    if (ri >= 0) {
+      rankedQueue.splice(ri, 1);
+      rankedQueueStatus();
+    }
     for (const [key, q] of queues) {
       const i = q.findIndex((e) => e.ws === ws);
       if (i >= 0) {
@@ -231,10 +240,63 @@ export function startServer(opts: ServerOptions) {
     }
   }
 
-  function startQueuedRoom(key: string, four: QueueEntry[]) {
+  /* ---------------- fila ranqueada por faixa de Elo (item 9.4) ---------------- */
+  interface RankedQueueEntry {
+    ws: WebSocket;
+    name: string;
+    accountId: number;
+    elo: number;
+    since: number;
+  }
+  const rankedQueue: RankedQueueEntry[] = [];
+
+  /** janela do jogador: base + alargamento por minuto completo de espera */
+  function rankedWindowOf(e: RankedQueueEntry): number {
+    const minutes = Math.floor((Date.now() - e.since) / 60000);
+    return (opts.rankedWindowBase ?? 150) + (opts.rankedWindowPerMin ?? 100) * minutes;
+  }
+
+  function rankedQueueStatus() {
+    rankedQueue.forEach((e, i) =>
+      send(e.ws, {
+        t: 'queueRankedStatus',
+        position: i + 1,
+        size: rankedQueue.length,
+        elo: e.elo,
+        window: rankedWindowOf(e),
+      })
+    );
+  }
+
+  function tryMatchRanked() {
+    const picked = pickRankedGroup(
+      rankedQueue,
+      Date.now(),
+      opts.rankedWindowBase ?? 150,
+      opts.rankedWindowPerMin ?? 100
+    );
+    if (!picked) {
+      rankedQueueStatus();
+      return;
+    }
+    const group = picked.map((i) => rankedQueue[i]);
+    for (const i of [...picked].sort((a, b) => b - a)) rankedQueue.splice(i, 1);
+    startQueuedRoom(
+      'classic',
+      group.map((g) => ({ ws: g.ws, name: g.name, accountId: g.accountId })),
+      true
+    );
+    rankedQueueStatus();
+  }
+
+  function startQueuedRoom(key: string, four: QueueEntry[], ranked = false) {
     const code = roomCode();
     const rules = rulesFor(key as RulesConfigId);
-    const state = newMatch(rules, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, four.map((e) => e.name));
+    // item 9.4: mesa com 3 humanos completa o 4º assento com bot
+    const names = four.map((e) => e.name);
+    while (names.length < 4) names.push(`Bot ${['Sul', 'Oeste', 'Norte'][names.length - 1]}`);
+    const state = newMatch(rules, (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0, names);
+    for (let seat = four.length; seat < 4; seat++) state.players[seat].isHuman = false;
     const room: Room = {
       code,
       state,
@@ -250,7 +312,7 @@ export function startServer(opts: ServerOptions) {
       rngTick: 1,
       rulesConfig: key as RulesConfigId,
       saveTimer: null,
-      ranked: false,
+      ranked,
       rankedRecorded: false,
       passwordHash: null,
       discardKey: null,
@@ -634,6 +696,32 @@ export function startServer(opts: ServerOptions) {
       }
       const t = msg.t as string;
 
+      if (t === 'queueRanked') {
+        // item 9.4: fila ranqueada com janela de Elo que alarga com a espera
+        const at = typeof msg.accountToken === 'string' ? msg.accountToken : null;
+        if (!at) {
+          send(ws, { t: 'error', error: 'Salas ranqueadas exigem uma conta.', code: 'err.rankedNeedsAccount' });
+          return;
+        }
+        const acc = await store.accountByToken(at);
+        if (!acc) {
+          send(ws, { t: 'error', error: 'Conta inválida.', code: 'err.accountInvalid' });
+          return;
+        }
+        const curSeason = seasonKey();
+        const elo = acc.season && acc.season !== curSeason ? 1500 : (acc.elo ?? 1500);
+        const existing = rankedQueue.findIndex((e) => e.ws === ws);
+        if (existing >= 0) rankedQueue.splice(existing, 1);
+        rankedQueue.push({
+          ws,
+          name: String(msg.name || `Jogador ${acc.id}`),
+          accountId: acc.id,
+          elo,
+          since: Date.now(),
+        });
+        tryMatchRanked();
+        return;
+      }
       if (t === 'create') {
         const code = roomCode();
         const rulesConfig: RulesConfigId =

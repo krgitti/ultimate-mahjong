@@ -28,6 +28,7 @@ interface Snap {
   reconnected?: boolean;
   spectator?: boolean;
   error?: string;
+  window?: number;
   seat2?: never;
   position?: number;
   size?: number;
@@ -1024,6 +1025,86 @@ describe('item 8b — watchdog de conexão (ranked)', () => {
       void away;
       expect(still.meta!.seats[1]).not.toBeNull(); // assento preservado (pode reconectar)
       expect(still.view!.players[1].isHuman).toBe(true);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
+});
+
+describe('item 9d — fila ranqueada por faixa de Elo', () => {
+  it('pickRankedGroup: janela, preferência por mesa de 4 e alargamento com a espera', async () => {
+    const { pickRankedGroup, rankedWindowOf } = await import('../../server/rankedQueue');
+    const now = Date.now();
+    const e = (elo: number, agoMs = 0) => ({ elo, since: now - agoMs });
+
+    // janela inicial e alargamento por minuto
+    expect(rankedWindowOf(e(1500), now)).toBe(150);
+    expect(rankedWindowOf(e(1500, 2 * 60000 + 5000), now)).toBe(350);
+
+    // menos de 3 → sem grupo
+    expect(pickRankedGroup([e(1500), e(1500)], now)).toBeNull();
+
+    // 3 próximos → grupo
+    const g3 = pickRankedGroup([e(1500), e(1540), e(1600)], now);
+    expect(g3).not.toBeNull();
+    expect(g3!.length).toBe(3);
+
+    // 3 distantes (spread 400 > 150) → sem grupo
+    expect(pickRankedGroup([e(1500), e(1500), e(1900)], now)).toBeNull();
+
+    // mas com 2 minutos de espera a janela alarga (150+200=350 ainda < 400 → não; 3 min → 450 ≥ 400)
+    expect(pickRankedGroup([e(1500), e(1500), e(1900, 3 * 60000)], now)).toBeNull(); // janela = min do grupo = 150 (os frescos)
+    const widened = pickRankedGroup(
+      [e(1500, 3 * 60000), e(1500, 3 * 60000), e(1900, 3 * 60000)],
+      now
+    );
+    expect(widened).not.toBeNull();
+
+    // preferência por mesa de 4 quando possível
+    const g4 = pickRankedGroup([e(1500), e(1510), e(1520), e(1530)], now);
+    expect(g4!.length).toBe(4);
+  });
+
+  it('WS: 3 contas na fila ranqueada formam sala ranked 3+1 automaticamente', async () => {
+    const PORT13 = 8917;
+    const server = startServer({ port: PORT13 });
+    try {
+      const A = client(PORT13);
+      const B = client(PORT13);
+      const C = client(PORT13);
+      const sendOpen = (c: TestClient, m: unknown) => {
+        if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(m));
+        else c.ws.on('open', () => c.ws.send(JSON.stringify(m)));
+      };
+      const acc = async (c: TestClient, username: string): Promise<string> =>
+        new Promise((res) => {
+          c.ws.on('message', (raw) => {
+            const m = JSON.parse(String(raw)) as Snap;
+            if (m.t === 'account' && m.accountToken) res(m.accountToken);
+          });
+          sendOpen(c, { t: 'account', username });
+        });
+      const tA = await acc(A, 'rq-ana');
+      const tB = await acc(B, 'rq-bia');
+      const tC = await acc(C, 'rq-caco');
+
+      sendOpen(A, { t: 'queueRanked', name: 'Ana', accountToken: tA });
+      const posA = await A.next((m) => m.t === 'queueRankedStatus', 15000, 'A status');
+      expect(posA.position).toBe(1);
+      sendOpen(B, { t: 'queueRanked', name: 'Bia', accountToken: tB });
+      await B.next((m) => m.t === 'queueRankedStatus', 15000, 'B status');
+      sendOpen(C, { t: 'queueRanked', name: 'Caco', accountToken: tC });
+
+      // os três entram sozinhos na mesma sala ranked (3 humanos + 1 bot)
+      const jA = await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      await B.next((m) => m.t === 'joined', 15000, 'B joined');
+      await C.next((m) => m.t === 'joined', 15000, 'C joined');
+      expect(jA.queued).toBe(true);
+      const snap = await A.next((m) => m.t === 'snapshot' && m.meta!.started === true, 15000, 'snap');
+      expect(snap.meta!.ranked).toBe(true);
+      expect(snap.meta!.seats[3]).toBeNull(); // 4º assento é bot
+      expect(snap.view!.players[3].isHuman).toBe(false);
+      expect(snap.view!.players[0].isHuman).toBe(true);
     } finally {
       await server.close();
     }

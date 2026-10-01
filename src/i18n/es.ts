@@ -304,4 +304,6 @@ export const es: Record<string, string> = {
   'on.seasonEnding': 'La temporada termina en {n} día(s) — el mes siguiente el Elo vuelve a 1500 y el marcador se archiva.',
   'on.pastSeasons': 'Temporadas anteriores',
   'on.noPastSeasons': 'Aún no hay temporadas terminadas.',
+  'on.queueRanked': 'Cola ranked (Elo)',
+  'on.queueRankedStatus': 'Cola ranked: posición {p} de {n} — tu Elo {elo}, ventana actual ±{w} (se amplía esperando).',
 };

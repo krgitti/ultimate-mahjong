@@ -304,4 +304,6 @@ export const pt: Record<string, string> = {
   'on.seasonEnding': 'A temporada encerra em {n} dia(s) — no mês seguinte o Elo volta a 1500 e o placar é arquivado.',
   'on.pastSeasons': 'Temporadas anteriores',
   'on.noPastSeasons': 'Nenhuma temporada encerrada ainda.',
+  'on.queueRanked': 'Fila ranqueada (Elo)',
+  'on.queueRankedStatus': 'Fila ranqueada: posição {p} de {n} — seu Elo {elo}, janela atual ±{w} (alarga com a espera).',
 };

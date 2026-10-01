@@ -175,6 +175,8 @@ export function OnlineScreen() {
   const [lastReplayCode, setLastReplayCode] = useState<string | null>(null);
   const [watchCode, setWatchCode] = useState('');
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
+  // item 9.4: status da fila ranqueada por Elo
+  const [rq, setRq] = useState<{ position: number; size: number; elo: number; window: number } | null>(null);
   // item 9.3: pódio das temporadas encerradas
   const [seasonHist, setSeasonHist] = useState<{ season: string; rows: { username: string; elo: number; rankedPlayed: number; rankedWins: number }[] }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
@@ -256,6 +258,13 @@ export function OnlineScreen() {
       if (msg.t === 'history') {
         setHist((msg.rows ?? []) as typeof hist);
         return;
+      }
+      if (msg.t === 'queueRankedStatus') {
+        setRq({ position: Number(msg.position), size: Number(msg.size), elo: Number(msg.elo), window: Number(msg.window) });
+        return;
+      }
+      if (msg.t === 'joined') {
+        setRq(null);
       }
       if (msg.t === 'seasonHistory') {
         setSeasonHist((msg.seasons ?? []) as typeof seasonHist);
@@ -482,9 +491,25 @@ export function OnlineScreen() {
           )}
           <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>{t('on.leaderboardBtn')}</button>
           {accountToken && (
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setRq(null);
+                connect({ t: 'queueRanked', name: name || 'Jogador', accountToken });
+              }}
+            >
+              ⚡ {t('on.queueRanked')}
+            </button>
+          )}
+          {accountToken && (
             <button className="btn" onClick={() => connect({ t: 'history', accountToken })}>{t('on.historyBtn')}</button>
           )}
         </div>
+        {rq && (
+          <p className="muted small" style={{ marginTop: 6 }}>
+            ⏳ {t('on.queueRankedStatus', { p: rq.position, n: rq.size, elo: rq.elo, w: rq.window })}
+          </p>
+        )}
         {stats && (
           <p className="muted small" style={{ marginTop: 6 }}>
             🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
