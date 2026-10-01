@@ -52,6 +52,8 @@ export interface ServerOptions {
   databaseUrl?: string;
   /** tempo (ms) do timer de descarte humano antes do auto-discard (item 7.3) */
   discardTimeoutMs?: number;
+  /** ranked: segundos... (ms) antes de substituir humano ausente por bot (item 8.2) */
+  afkTimeoutMs?: number;
 }
 
 interface Session {
@@ -86,6 +88,8 @@ interface Room {
   /** timer de descarte (item 7.3): chave do turno atual e deadline */
   discardKey: string | null;
   discardDeadline: number | null;
+  /** watchdog (item 8.2): desde quando cada assento está desconectado */
+  awaySince: (number | null)[];
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -141,6 +145,7 @@ export function startServer(opts: ServerOptions) {
       passwordHash: rec.passwordHash ?? null,
       discardKey: null,
       discardDeadline: null,
+      awaySince: [null, null, null, null],
     };
     rooms.set(rec.code, room);
     return room;
@@ -249,6 +254,7 @@ export function startServer(opts: ServerOptions) {
       passwordHash: null,
       discardKey: null,
       discardDeadline: null,
+      awaySince: [null, null, null, null],
     };
     four.forEach((e, seat) => {
       const sess: Session = { ws: e.ws, token: token(), name: e.name, connected: true, lastSeen: Date.now(), accountId: e.accountId };
@@ -363,6 +369,28 @@ export function startServer(opts: ServerOptions) {
     if (s.phase !== 'discard' || isBotSeat(room, s.current) || isAway(room, s.current)) {
       room.discardKey = null;
       room.discardDeadline = null;
+    }
+    // item 8.2: watchdog de conexão — em salas RANQUEADAS, humano ausente
+    // por mais de afkTimeoutMs vira bot (o jogo não fica refém de quem caiu;
+    // o resultado ainda conta para a conta vinculada). Salas casuais seguem
+    // com o auto-jogo passivo antigo.
+    if (room.started && room.ranked) {
+      for (let seat = 0; seat < 4; seat++) {
+        const sess = room.seats[seat];
+        if (!sess) continue;
+        if (sess.connected) {
+          room.awaySince[seat] = null;
+          continue;
+        }
+        if (room.awaySince[seat] === null) room.awaySince[seat] = Date.now();
+        else if (Date.now() - room.awaySince[seat]! > (opts.afkTimeoutMs ?? 90000)) {
+          room.seats[seat] = null;
+          s.players[seat].isHuman = false;
+          s.players[seat].name = `Bot (era ${sess.name})`;
+          room.awaySince[seat] = null;
+          broadcast(room);
+        }
+      }
     }
     if (s.phase === 'hand-over') {
       if (room.handOverAt === null) room.handOverAt = Date.now();
@@ -620,6 +648,7 @@ export function startServer(opts: ServerOptions) {
           passwordHash: typeof msg.password === 'string' && msg.password ? sha256pw(msg.password) : null,
           discardKey: null,
           discardDeadline: null,
+          awaySince: [null, null, null, null],
         };
         const sess: Session = { ws, token: token(), name: String(msg.name || 'Jogador 1'), connected: true, lastSeen: Date.now(), accountId: null };
         room.seats[0] = sess;

@@ -15,7 +15,7 @@ interface Snap {
     current: number;
     handNumber?: number;
     wallCount?: number;
-    players: { name: string; discards: unknown[]; handCount: number }[];
+    players: { name: string; discards: unknown[]; handCount: number; isHuman?: boolean }[];
     myHand?: { tiles: { id: number }[] };
     events: { t: string }[];
     offers: { seat: number; kind: string }[];
@@ -45,7 +45,7 @@ interface Snap {
   emote?: string;
   rows?: {
     username?: string; elo?: number; rankedPlayed?: number; rankedWins?: number; rankedPoints?: number;
-    playedAt?: number; win?: boolean; points?: number; eloBefore?: number; eloAfter?: number; roomCode?: string;
+    playedAt?: number; win?: boolean; points?: number; eloBefore?: number; eloAfter?: number; roomCode?: string; season?: string;
   }[];
 }
 
@@ -905,4 +905,76 @@ describe('item 8a — temporadas ranqueadas', () => {
     expect(rows[0].prevSeason).toBe('2020-01');
     expect(rows[0].prevElo).toBe(1700);
   });
+});
+
+describe('item 8b — watchdog de conexão (ranked)', () => {
+  function sendWhenOpen8(c: TestClient, msg: unknown) {
+    if (c.ws.readyState === WebSocket.OPEN) c.ws.send(JSON.stringify(msg));
+    else c.ws.on('open', () => c.ws.send(JSON.stringify(msg)));
+  }
+
+  it('ranked: humano desconectado vira bot após o timeout', async () => {
+    const PORT11 = 8915;
+    const server = startServer({ port: PORT11, afkTimeoutMs: 1500 });
+    try {
+      const A = client(PORT11);
+      const B = client(PORT11);
+      const D = client(PORT11);
+      // ranqueada precisa de 3+ humanos — conta do A
+      const tok = await new Promise<string>((res) => {
+        A.ws.on('message', (raw) => {
+          const m = JSON.parse(String(raw)) as Snap;
+          if (m.t === 'account' && m.accountToken) res(m.accountToken);
+        });
+        sendWhenOpen8(A, { t: 'account', username: 'afk-a-' + Date.now() });
+      });
+      sendWhenOpen8(A, { t: 'create', name: 'Ana', room: 'AFK1', ranked: true, accountToken: tok });
+      const j = await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      sendWhenOpen8(B, { t: 'join', code: j.code, name: 'Bia' });
+      await A.next((m) => m.t === 'snapshot' && m.meta!.seats[1] !== null, 15000, 'B in');
+      sendWhenOpen8(D, { t: 'join', code: j.code, name: 'Dora' });
+      await A.next((m) => m.t === 'snapshot' && m.meta!.seats[2] !== null, 15000, 'D in');
+      sendWhenOpen8(A, { t: 'start' });
+      await A.next((m) => m.t === 'snapshot' && m.meta!.started === true, 15000, 'started');
+
+      // D cai — watchdog deve transformá-la em bot (> afkTimeoutMs)
+      D.ws.close();
+      const snap = await A.next(
+        (m) => m.t === 'snapshot' && m.meta!.seats[2] === null && String(m.view!.players[2].name).startsWith('Bot'),
+        15000,
+        'D virou bot'
+      );
+      expect(snap.view!.players[2].name).toContain('Dora');
+      expect(snap.view!.players[2].isHuman).toBe(false);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
+
+  it('casual: humano desconectado NÃO é substituído (segue ausente)', async () => {
+    const PORT12 = 8916;
+    const server = startServer({ port: PORT12, afkTimeoutMs: 1500 });
+    try {
+      const A = client(PORT12);
+      const B = client(PORT12);
+      sendWhenOpen8(A, { t: 'create', name: 'Ana', room: 'AFK2' });
+      const j = await A.next((m) => m.t === 'joined', 15000, 'A joined');
+      sendWhenOpen8(B, { t: 'join', code: j.code, name: 'Bia' });
+      await A.next((m) => m.t === 'snapshot' && m.meta!.seats[1] !== null, 15000, 'B in');
+      sendWhenOpen8(A, { t: 'start' });
+      await A.next((m) => m.t === 'snapshot' && m.meta!.started === true, 15000, 'started');
+
+      B.ws.close();
+      const away = await A.next((m) => m.t === 'snapshot' && m.meta!.seats[1]?.connected === false, 15000, 'B away');
+      await new Promise((r) => setTimeout(r, 2600)); // bem além do timeout
+      // predicado exige snapshot da partida: a fila guarda snapshots antigos
+      // do lobby (assento 1 ainda vazio) que satisfariam 'qualquer snapshot'
+      const still = await A.next((m) => m.t === 'snapshot' && m.meta!.started === true, 15000, 'still');
+      void away;
+      expect(still.meta!.seats[1]).not.toBeNull(); // assento preservado (pode reconectar)
+      expect(still.view!.players[1].isHuman).toBe(true);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
 });
