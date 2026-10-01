@@ -410,24 +410,51 @@ docker run --rm -e UMO_DATABASE_URL=... ultimate-mahjong-server npx tsx server/m
 O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 (a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
 
+## Idiomas
+
+PT-BR, EN e ES cobrem toda a interface, incluindo o servidor (as mensagens de
+erro e de sistema viajam por código — `err.*`, `sys.*` — e são traduzidas no
+cliente; nenhuma string em português é hard-coded na tela). O seletor de
+idioma fica nas Configurações e é lembrado no perfil. Textos didáticos longos
+(descrições de fan MCR, tutoriais) seguem PT por decisão documentada.
+
+## Replays e compartilhamento
+
+Toda mesa online grava o log (ranqueada e casual). Ao fim, o placar mostra o
+código do replay e um link `?replay=CODE#online`; quem abrir o link (ou colar
+o código em Online → "Assistir replay") vê a partida passo a passo, com
+velocidade e pausa. Também dá para baixar/subir um `.json` do replay. O
+formato é versionado (`umo-replay-v1`) e o ruleset é recriado a partir dele.
+
+## Temporada e fila ranqueada
+
+- **Painel da temporada**: pódio da temporada atual, sua posição/Elo, aviso de
+  encerramento na última semana do mês e histórico das 5 temporadas anteriores
+  (arquivadas na virada, antes do reset).
+- **Fila ranqueada**: `⚡ Fila ranqueada (Elo)` agrupa jogadores por Elo
+  próximo — a janela começa em ±150 e alarga 100/min até formar a mesa
+  (prefere 4 jogadores, aceita 3 + bot). Exige conta criada.
+
+## PWA e acessibilidade
+
+- `public/manifest.webmanifest` + `public/sw.js`: instalável, e o app shell
+  funciona offline (Solitaire e Tradicional já são 100% client-side; o modo
+  online obviamente precisa de rede).
+- Navegação por teclado na mão (Tradicional e Online): setas percorrem as
+  peças legais, Enter/Espaço descarta; peças são botões rotulados por face,
+  filas são `role=list`, eventos e chat são `aria-live`.
+
 ## Próximos passos sugeridos
-*(os 5 itens do pedido 8 — temporadas, watchdog, replay online, convite por
-link e i18n — foram implementados nesta rodada; sugestões atuais:)*
-1. **Completar o i18n**: traduzir tutoriais, desafios/campanha e as
-   descrições longas das house rules MCR (hoje PT-only, documentado);
-   internacionalizar as mensagens de erro do servidor (hoje PT fixo).
-2. **Replays para casuais + compartilhamento**: gravar o log também em salas
-   casuais e permitir exportar/importar um replay por código ou link
-   (assistir partida de outro jogador).
-3. **Painel da temporada**: top 3 da temporada atual com destaque, aviso de
-   encerramento na última semana do mês e histórico de temporadas passadas
-   (leaderboard por `season`).
-4. **Fila ranqueada por faixa de Elo**: matchmaking que espera jogadores com
-   rating próximo (janela que alarga com o tempo de espera).
-5. **Bots mais fortes**: betaori completo (descarte 100% seguro sob riichi)
-   e noção de valor no riichi; bots MCR otimizando fan mínimo da house rule.
-6. **PWA instalável**: manifest + service worker para jogar offline no
-   celular (Solitaire e Tradicional já são 100% client-side).
-7. **Acessibilidade da mesa**: navegação por teclado no Tradicional/Online
-   (setas para escolher peça, Enter descarta) e labels ARIA completos.
+
+1. **Testes e2e do modo online completo**: cobrir uma mão inteira por
+   WebSocket em Playwright (hoje os fluxos online são testados até a mesa
+   montada; a mão completa é coberta em `src/tests/server.test.ts`).
+2. **Replay no Solitaire**: o formato `umo-replay-v1` já é genérico — falta
+   gravar as ações do Solitaire e reaproveitar o visualizador.
+3. **Bots MCR por valor esperado**: hoje o hard persegue mãos tricotadas e o
+   bônus de naipe/dragões; o próximo passo é estimar fan esperado por
+   descarte (não só shanten + bônus heurístico).
+4. **Perfil e estatísticas por variante**: separar histórico e gráficos por
+   ruleset (HK/Riichi/MCR) na tela de estatísticas.
+5. **Mais idiomas** (francês, alemão) e revisão por falantes nativos.
 
