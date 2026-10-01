@@ -35,7 +35,7 @@ export const fr: Record<string, string> = {
   'set.hands8': '8 mains (Est + Sud)',
   'set.hands16': '16 mains (partie complète)',
   'set.botDifficulty': 'Difficulté des bots',
-  'set.botEasy': 'Facile — écarts quasi aléatoires',
+  'set.botEasy': 'Facile — défausses quasi aléatoires',
   'set.botMedium': 'Moyen — minimise le shanten, sans défense',
   'set.botHard': 'Difficile — shanten + sécurité + valeur',
   // solitaire
@@ -202,7 +202,7 @@ export const fr: Record<string, string> = {
   'tut.trad.playFull': 'Jouer une partie complète',
   'tut.trad.winds': 'Vent dominant : {dom} · Votre vent : {seat}',
   'tut.trad.wall': 'Mur : {n}',
-  'tut.trad.yourDiscards': 'Vos écarts',
+  'tut.trad.yourDiscards': 'Votre défausse',
   'tut.trad.discardBtn': 'Écarter {tile}',
   'tut.trad.tsumoBtn': 'TSUMO !',
   'tut.trad.ronBtn': 'RON (gagner maintenant)',
