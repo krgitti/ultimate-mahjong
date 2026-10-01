@@ -18,6 +18,11 @@ test.describe('Ultimate Mahjong Online — essential flows', () => {
     // board with 144 tiles
     await expect(page.locator('button[data-tile-id]')).toHaveCount(144, { timeout: 20000 });
     await expect(page.getByText('Pares:')).toContainText('72');
+    // modo ampliado (mobile): tabuleiro vira navegável
+    await page.getByRole('button', { name: /Ampliar tabuleiro/ }).click();
+    await expect(page.locator('.board-wrap.scrollable')).toHaveCount(1);
+    await page.getByRole('button', { name: /Ajustar tabuleiro/ }).click();
+    await expect(page.locator('.board-wrap.scrollable')).toHaveCount(0);
     // ask for a hint and remove the highlighted pair
     await page.getByTitle(/Dica/).click();
     const glowing = page.locator('button.hint-glow');

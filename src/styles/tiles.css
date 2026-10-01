@@ -78,6 +78,9 @@
 /* hand tiles (traditional) */
 .hand-tile {
   position: relative;
+  width: calc(38px * var(--scale));
+  height: calc(52px * var(--scale));
+  flex: none;
   border-radius: calc(5px * var(--scale));
   background: linear-gradient(160deg, var(--tile-face) 0%, var(--tile-face-2) 78%, var(--tile-side) 100%);
   border: 1px solid rgba(90, 78, 50, 0.55);
@@ -113,6 +116,19 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+/* modo ampliado (mobile): tabuleiro maior que a tela, navegável por scroll/toque */
+.board-wrap.scrollable {
+  overflow: auto;
+  align-items: flex-start;
+  justify-content: flex-start;
+  -webkit-overflow-scrolling: touch;
+}
+.board-zoom-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
 }
 
 .board-viewport {
@@ -377,3 +393,24 @@
 .timeline-item.future { opacity: 0.45; }
 .timeline-n { opacity: 0.6; font-variant-numeric: tabular-nums; margin-right: 4px; }
 .replay-end { font-size: 0.8em; opacity: 0.7; margin-top: 8px; }
+
+/* ---------------- mobile: peças legíveis (pedido 8, obs) ---------------- */
+@media (max-width: 700px) {
+  .hand-row {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+  }
+  /* !important para vencer o width/height inline da mesa tradicional */
+  .hand-tile {
+    width: calc(46px * var(--scale)) !important;
+    height: calc(62px * var(--scale)) !important;
+  }
+  .mini-tile {
+    width: calc(20px * var(--scale));
+    height: calc(27px * var(--scale));
+  }
+  .pond { min-height: calc(29px * var(--scale)); }
+}

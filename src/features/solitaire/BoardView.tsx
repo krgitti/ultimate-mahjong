@@ -39,19 +39,24 @@ export function BoardView({ state, bounds, selectedId, hintIds, removingIds, sha
 
   // fit-to-container scale. The *viewport* div gets the scaled dimensions so the layout
   // box matches what is painted (transform alone keeps the unscaled box and breaks centering).
+  // modo ampliado (pedido 8, obs mobile): em telas pequenas o fit puro deixa
+  // as peças ilegíveis; no modo 'zoom' o tabuleiro ganha um piso de escala e
+  // fica navegável por scroll/toque.
+  const [zoomed, setZoomed] = useState(false);
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const apply = () => {
       const s = Math.min(el.clientWidth / boardW, el.clientHeight / boardH, 1.35);
-      setScale(Math.max(0.28, s));
+      const fit = Math.max(0.28, s);
+      setScale(zoomed ? Math.min(1, Math.max(fit, 0.8)) : fit);
     };
     apply();
     if (typeof ResizeObserver === 'undefined') return; // jsdom / older envs
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [boardW, boardH]);
+  }, [boardW, boardH, zoomed]);
 
   const tiles = state.tiles.filter((t) => !t.removed || removingIds.includes(t.id));
   const sorted = [...tiles].sort(
@@ -89,7 +94,14 @@ export function BoardView({ state, bounds, selectedId, hintIds, removingIds, sha
   };
 
   return (
-    <div className="board-wrap" ref={wrapRef}>
+    <div className={`board-wrap${zoomed ? ' scrollable' : ''}`} ref={wrapRef}>
+      <button
+        className="btn btn-sm board-zoom-btn"
+        onClick={() => setZoomed((z) => !z)}
+        aria-label={zoomed ? 'Ajustar tabuleiro à tela' : 'Ampliar tabuleiro'}
+      >
+        {zoomed ? '🔎 Ajustar' : '🔍 Ampliar'}
+      </button>
       <div
         className="board-viewport"
         style={{ width: boardW * scale, height: boardH * scale }}
