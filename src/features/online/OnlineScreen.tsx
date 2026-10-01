@@ -156,6 +156,7 @@ export function OnlineScreen() {
   // item 11.5: variante da fila ranqueada e da classificação
   const [rankRs, setRankRs] = useState<'classic' | 'riichi' | 'mcr'>('classic');
   const [lbRs, setLbRs] = useState<'classic' | 'riichi' | 'mcr'>('classic');
+  const [seasonRs, setSeasonRs] = useState<'classic' | 'riichi' | 'mcr'>('classic');
   const [leaderSeason, setLeaderSeason] = useState<string | null>(null);
   // item 8.4: feedback dos botões de cópia (código/link) — null = nada copiado
   const [copied, setCopied] = useState<'código' | 'link' | null>(null);
@@ -585,9 +586,21 @@ export function OnlineScreen() {
                 </span>
               ))}
             </div>
-            <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={() => connect({ t: 'seasonHistory' })}>
-              🏛 {t('on.pastSeasons')}
-            </button>
+            <div className="row" style={{ gap: 6, marginTop: 6, alignItems: 'center' }}>
+              {/* item 12.2: pódio da temporada por variante */}
+              <select
+                value={seasonRs}
+                onChange={(e) => setSeasonRs(e.target.value as 'classic' | 'riichi' | 'mcr')}
+                aria-label={t('on.seasonRuleset')}
+              >
+                <option value="classic">{t('stats.variantHK')}</option>
+                <option value="riichi">{t('stats.variantRiichi')}</option>
+                <option value="mcr">{t('stats.variantMCR')}</option>
+              </select>
+              <button className="btn btn-sm" onClick={() => connect({ t: 'seasonHistory', ruleset: seasonRs })}>
+                🏛 {t('on.pastSeasons')}
+              </button>
+            </div>
             {seasonHist && (
               seasonHist.length === 0 ? (
                 <p className="muted small" style={{ marginTop: 4 }}>{t('on.noPastSeasons')}</p>

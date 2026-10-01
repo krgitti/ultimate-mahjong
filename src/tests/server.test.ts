@@ -1244,3 +1244,47 @@ describe('item 8c — replay no histórico (MemoryStore)', () => {
     expect(await st.historyReplay(account.id, 999)).toBeNull();
   });
 });
+describe('item 12.2 — pódio da temporada por variante', () => {
+  it('MemoryStore: virada arquiva uma linha por variante', async () => {
+    const st = new MemoryStore();
+    await st.init();
+    const { account, accountToken } = await st.createAccount('podium-rs');
+    // temporada antiga: riichi 1650, classic 1580, mcr intacto (1500)
+    await st.recordRankedResult(account.id, true, 40, 1650, '2021-12', 'riichi');
+    await st.recordRankedResult(account.id, true, 40, 1580, '2021-12', 'classic');
+    // primeira partida da temporada atual dispara a virada
+    await st.recordRankedResult(account.id, false, -10, 1490, seasonKey(), 'mcr');
+    const acc = await st.accountByToken(accountToken);
+    expect(acc?.prevSeason).toBe('2021-12');
+    const riichi = await st.seasonResults('2021-12', 10, 'riichi');
+    expect(riichi[0].rows[0].elo).toBe(1650);
+    const classic = await st.seasonResults('2021-12', 10, 'classic');
+    expect(classic[0].rows[0].elo).toBe(1580);
+    const mcr = await st.seasonResults('2021-12', 10, 'mcr');
+    expect(mcr[0].rows[0].elo).toBe(1500);
+    // sem ruleset → classic (compatibilidade com o formato antigo)
+    const dflt = await st.seasonResults('2021-12', 10);
+    expect(dflt[0].rows[0].elo).toBe(1580);
+  });
+
+  it('PostgresStore: season_results arquiva por variante (migração 010)', async () => {
+    const DB = process.env.UMO_TEST_DATABASE_URL || 'postgres://umo:umo@127.0.0.1:5432/umo';
+    let ok = true;
+    try {
+      const st = new PostgresStore(DB);
+      await st.init();
+      const { account } = await st.createAccount('podium-rs-pg-' + Date.now());
+      await st.recordRankedResult(account.id, true, 40, 1660, '2019-07', 'riichi');
+      await st.recordRankedResult(account.id, true, 40, 1570, '2019-07', 'classic');
+      await st.recordRankedResult(account.id, false, -10, 1490, seasonKey(), 'mcr');
+      const riichi = await st.seasonResults('2019-07', 10, 'riichi');
+      expect(riichi[0].rows[0].elo).toBe(1660);
+      const classic = await st.seasonResults('2019-07', 10, 'classic');
+      expect(classic[0].rows[0].elo).toBe(1570);
+    } catch (e) {
+      console.warn('[pg]', (e as Error).message);
+      ok = false;
+    }
+    expect(ok).toBe(true);
+  }, 60000);
+});

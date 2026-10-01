@@ -891,8 +891,9 @@ export function startServer(opts: ServerOptions) {
       }
 
       if (t === 'seasonHistory') {
-        // item 9.3: pódio das temporadas encerradas (5 mais recentes)
-        const hist = await store.seasonResults(undefined, 10);
+        // item 9.3 + 12.2: pódio das temporadas encerradas por variante
+        const rs: RulesetKey = msg.ruleset === 'riichi' ? 'riichi' : msg.ruleset === 'mcr' ? 'mcr' : 'classic';
+        const hist = await store.seasonResults(undefined, 10, rs);
         send(ws, { t: 'seasonHistory', seasons: hist });
         return;
       }

@@ -303,6 +303,7 @@ export const fr: Record<string, string> = {
   'on.qrClose': 'Fermer le QR',
   'on.queueRuleset': 'Variante de la file classée',
   'on.leaderboardRuleset': 'Variante du classement',
+  'on.seasonRuleset': 'Variante du podium de saison :',
   'trad.exportReplay': 'Exporter',
   'trad.importReplay': 'Importer',
   'trad.importPrompt': 'Collez le JSON du replay exporté :',
