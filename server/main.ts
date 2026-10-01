@@ -42,7 +42,7 @@ import { MemoryStore, PostgresStore, type RoomRecord, type RoomStore, type Rules
 import { eloDeltas, seasonKey } from './elo';
 import { serializeReplay } from '../src/game-engine/traditional/engine';
 import { pickRankedGroup } from './rankedQueue';
-import { chooseDiscard, chooseCall, type BotView } from '../src/game-engine/ai/bot';
+import { chooseDiscard, chooseCall, type BotView, shouldDeclareRiichi } from '../src/game-engine/ai/bot';
 import { createRng } from '../src/game-engine/tiles/rng';
 import { faceIndex } from '../src/game-engine/tiles/tiles';
 
@@ -551,7 +551,10 @@ export function startServer(opts: ServerOptions) {
           broadcast(room);
           return;
         }
-        if (isBotSeat(room, seat) && canRiichi(s, seat)) declareRiichi(s, seat);
+        // item 9.5: bot só declara riichi quando compensa (espera/valor)
+        if (isBotSeat(room, seat) && canRiichi(s, seat) && shouldDeclareRiichi(botViewOf(room, seat))) {
+          declareRiichi(s, seat);
+        }
         const view = botViewOf(room, seat);
         const i = isBotSeat(room, seat)
           ? chooseDiscard(view, 'hard', createRng((room.rngTick++ * 40503 + seat) >>> 0))

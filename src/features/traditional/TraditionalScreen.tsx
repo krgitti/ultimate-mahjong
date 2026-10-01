@@ -35,7 +35,7 @@ import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
 import { riichiRuleset } from '../../game-engine/rules/riichi';
 import { mcrRuleset } from '../../game-engine/rules/mcr';
-import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
+import { chooseDiscard, chooseCall, type BotView, type Difficulty, shouldDeclareRiichi } from '../../game-engine/ai/bot';
 import { createRng } from '../../game-engine/tiles/rng';
 import { faceName, faceIndex, indexToFace, type TileFace } from '../../game-engine/tiles/tiles';
 import { TileFaceArt, TileBack } from '../../components/TileFace';
@@ -177,8 +177,11 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
         if (canAnkan(st, seat) !== null && Math.random() < 0) {
           /* ankan by bots disabled in v1 (keeps flow simple) */
         }
-        if (difficulty === 'hard' && canRiichi(st, seat)) declareRiichi(st, seat);
         const view = botView(st, seat);
+        // item 9.5: bot só declara riichi quando compensa (espera boa/valor/fim de jogo)
+        if (difficulty === 'hard' && canRiichi(st, seat) && shouldDeclareRiichi(view)) {
+          declareRiichi(st, seat);
+        }
         const i = chooseDiscard(view, difficulty, createRng((st.rngState ^ (turnCountRef.current * 40503)) >>> 0));
         turnCountRef.current += 1;
         const tileId = st.players[seat].hand[i] ?? st.players[seat].hand[0];

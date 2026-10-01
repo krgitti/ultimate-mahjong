@@ -1,6 +1,6 @@
 import type { TileFace } from '../tiles/tiles';
 import { faceIndex, isTerminalOrHonor } from '../tiles/tiles';
-import { countsFromFaces, normalShanten, acceptanceCount, type Counts } from '../traditional/hand';
+import { countsFromFaces, normalShanten, acceptanceCount, winningWaits, type Counts } from '../traditional/hand';
 import type { MeldKind } from '../traditional/engine';
 import type { Rng } from '../tiles/rng';
 import { totalRisk, threatLevel, type OppInfo } from './defense';
@@ -167,12 +167,22 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
   const used = usedCounts(view);
 
   if (fold) {
-    // betaori: pure safety ranking over the WHOLE hand (no shanten filter)
-    const scored = view.hand.map((f, idx) => {
-      const fi = faceIndex(f);
+    // betaori TOTAL (item 9.5): se houver GENBUTSU contra todos os
+    // declarantes de riichi (peça que eles já descartaram → ron impossível),
+    // o descarte sai obrigatoriamente desse subconjunto 100% seguro.
+    const genbutsu = view.hand
+      .map((f, idx) => ({ f, idx }))
+      .filter(({ f }) => {
+        const fi = faceIndex(f);
+        return riichiOpps.every((o) => o.discards.includes(fi));
+      })
+      .map(({ idx }) => idx);
+    const poolIdx = genbutsu.length > 0 ? genbutsu : view.hand.map((_, i) => i);
+    const scored = poolIdx.map((idx) => {
+      const fi = faceIndex(view.hand[idx]);
       const risk = opps.length > 0 ? totalRisk(fi, opps, used) : 0;
       let s = -risk * 100 + (used[fi] ?? 0) * 10; // genbutsu/visible first
-      if (isTerminalOrHonor(f)) s += 5; // fewer two-sided waits feed on these
+      if (isTerminalOrHonor(view.hand[idx])) s += 5; // fewer two-sided waits feed on these
       return { idx, s };
     });
     scored.sort((a, b) => b.s - a.s);
@@ -198,6 +208,8 @@ export function chooseDiscard(view: BotView, difficulty: Difficulty, rng: Rng): 
         const risk = totalRisk(fi, opps, used);
         score -= risk * (push ? 1 : defensive ? 40 : 4); // pressur ~ ignores risk
       }
+      // item 9.5 — noção de valor MCR (helper puro testável)
+      if (view.rulesetId === 'mcr') score += mcrValueBonus(remaining);
     }
     return { idx, score };
   });
@@ -301,4 +313,52 @@ export function chooseCall(
     void remaining;
   }
   return { call: 'pass' };
+}
+
+
+/**
+ * Noção de valor no riichi (item 9.5): o bot hard só declara riichi quando
+ * vale a pena travar a mão — espera boa (3+ faces), OU fim de jogo (muro
+ * curto, não dá para melhorar), OU a mão já tem elemento de valor
+ * (trinca de dragões). Espera ruim em início/meio de jogo: aguarda melhoria.
+ * Usa só a mão própria + informação pública.
+ */
+export function shouldDeclareRiichi(view: BotView): boolean {
+  if (view.melds.some((m) => m.kind !== 'ankan')) return false; // mão aberta não declara
+  const counts = countsFromFaces(view.hand);
+  // melhor espera entre os descartes legais (mão de 14 → 13)
+  let bestWaits = 0;
+  const seen = new Set<number>();
+  for (const f of view.hand) {
+    const fi = faceIndex(f);
+    if (seen.has(fi)) continue;
+    seen.add(fi);
+    const c = counts.slice();
+    c[fi] = Math.max(0, (c[fi] ?? 0) - 1);
+    const waits = winningWaits(c, view.melds.length).length;
+    if (waits > bestWaits) bestWaits = waits;
+  }
+  if (bestWaits === 0) return false; // nem está tenpai
+  if (bestWaits >= 3) return true; // espera boa
+  if (view.wallCount <= 45) return true; // fim de jogo: ir até o fim
+  return view.hand.filter((f) => f.suit === 'dragon').length >= 3; // valor próprio
+}
+
+
+/**
+ * Noção de valor MCR (item 9.5): bônus para mãos que tendem a atingir o fan
+ * mínimo da house rule — concentração em um naipe (flush/semi-flush) e
+ * dragões (valores fixos em MCR). Informação 100% própria/pública.
+ */
+export function mcrValueBonus(remaining: TileFace[]): number {
+  let suitMax = 0;
+  for (const su of ['man', 'pin', 'sou'] as const) {
+    const c = remaining.filter((f) => f.suit === su).length;
+    if (c > suitMax) suitMax = c;
+  }
+  let bonus = 0;
+  if (suitMax >= 8) bonus += 10;
+  else if (suitMax >= 6) bonus += 4;
+  bonus += remaining.filter((f) => f.suit === 'dragon').length * 1.5;
+  return bonus;
 }
