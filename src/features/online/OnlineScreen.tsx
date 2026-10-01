@@ -364,10 +364,11 @@ export function OnlineScreen() {
             {chat.length === 0 && <div className="muted small">Sem mensagens ainda.</div>}
             {chat.map((m, i) => (
               <div key={i} className="small">
+                {/* item 11.4: espectadores (seat -1) participam do chat identificados */}
                 {m.emote ? (
-                  <><b>{m.name}</b> {m.emote}</>
+                  <><b>{m.seat === -1 ? '👁 ' : ''}{m.name}</b> {m.emote}</>
                 ) : (
-                  <><b>{m.name}</b>: {m.text}</>
+                  <><b>{m.seat === -1 ? '👁 ' : ''}{m.name}</b>: {m.text}</>
                 )}
               </div>
             ))}
