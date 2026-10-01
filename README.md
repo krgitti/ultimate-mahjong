@@ -411,10 +411,23 @@ O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 (a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
 
 ## Próximos passos sugeridos
-1. Temporadas ranqueadas (reset mensal de Elo com badge de temporada).
-2. Watchdog de conexão: substituir humano ausente por bot após N segundos
-   em salas ranqueadas (hoje ele é auto-jogado passivamente).
-3. Replay online: salvar o log da partida ranqueada e oferecer revisão
-   (a UI de replay do offline já existe — conectar ao histórico).
-4. Convite por link (URL com código da sala) e cópia do código com 1 clique.
-5. i18n (EN/ES) das telas — o motor já nomes de fan em 3 idiomas.
+*(os 5 itens do pedido 8 — temporadas, watchdog, replay online, convite por
+link e i18n — foram implementados nesta rodada; sugestões atuais:)*
+1. **Completar o i18n**: traduzir tutoriais, desafios/campanha e as
+   descrições longas das house rules MCR (hoje PT-only, documentado);
+   internacionalizar as mensagens de erro do servidor (hoje PT fixo).
+2. **Replays para casuais + compartilhamento**: gravar o log também em salas
+   casuais e permitir exportar/importar um replay por código ou link
+   (assistir partida de outro jogador).
+3. **Painel da temporada**: top 3 da temporada atual com destaque, aviso de
+   encerramento na última semana do mês e histórico de temporadas passadas
+   (leaderboard por `season`).
+4. **Fila ranqueada por faixa de Elo**: matchmaking que espera jogadores com
+   rating próximo (janela que alarga com o tempo de espera).
+5. **Bots mais fortes**: betaori completo (descarte 100% seguro sob riichi)
+   e noção de valor no riichi; bots MCR otimizando fan mínimo da house rule.
+6. **PWA instalável**: manifest + service worker para jogar offline no
+   celular (Solitaire e Tradicional já são 100% client-side).
+7. **Acessibilidade da mesa**: navegação por teclado no Tradicional/Online
+   (setas para escolher peça, Enter descarta) e labels ARIA completos.
+
