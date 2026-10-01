@@ -157,13 +157,13 @@ guarda o estado do PRNG — partidas são reproduzíveis a partir da semente.
 |---|---|---|
 | Motor Solitaire + layouts + gerador/solucionador | `npx vitest run src/tests/solitaire.test.ts` | **47/47 ✅** |
 | Motor tradicional + pontuação + bots + esperas informativas | `npx vitest run src/tests/traditional.test.ts` | **39/39 ✅** |
-| Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur/nakasuji, replay | `npx vitest run src/tests/rulesets.test.ts` | **30/30 ✅** |
-| MCR tabela oficial completa (81 fan): bandas, exclusões, mãos irregulares, flores | `npx vitest run src/tests/mcr-full.test.ts` | **24/24 ✅** |
+| Rulesets plugáveis: formas alt., Riichi (dora/ura/ippatsu/fu), MCR, betaori/pressur/nakasuji, replay, shanten tricotado + bot MCR irregular | `npx vitest run src/tests/rulesets.test.ts` | **35/35 ✅** |
+| MCR tabela oficial completa (81 fan): bandas, exclusões, mãos irregulares, flores, cache/multi-decomposição | `npx vitest run src/tests/mcr-full.test.ts` | **28/28 ✅** |
 | UI de revisão de replay (linha do tempo, jsdom) | `npx vitest run src/tests/replay-ui.test.tsx` | **3/3 ✅** |
 | Migrações SQL versionadas (banco novo + banco legado) | `npx vitest run src/tests/migrate.test.ts` | **2/2 ✅** (Postgres real) |
 | App (jsdom): init, navegação, persistência, jogo real via cliques, erros | `npx vitest run src/tests/app.test.tsx` | **13/13 ✅** |
 | Editor import/export JSON | `npx vitest run src/tests/editor-io.test.ts` | **4/4 ✅** |
-| Servidor autoritativo: WS real, vazamento zero, reconexão, espectadores, Postgres/contas, fila de matchmaking, ranked/stats | `npx vitest run src/tests/server.test.ts` | **7/7 ✅** (Postgres real) |
+| Servidor autoritativo: WS real, vazamento zero, reconexão, espectadores, Postgres/contas, fila, ranked/stats, **partida ranqueada completa → Elo zero-sum + leaderboard**, chat/emotes | `npx vitest run src/tests/server.test.ts` | **12/12 ✅** (Postgres real) |
 | Typecheck app + servidor | `npx tsc --noEmit` / `npm run typecheck:server` | **0 erros** |
 | Build de produção | `npm run build` | **ok** (92 KB gzip) |
 | e2e Playwright (Chromium), incl. multiplayer com 2 browsers | `npx playwright test` | **7/7 ✅** |
@@ -252,7 +252,33 @@ conta/credenciais do usuário (nada automático nem financeiro). Instruções pa
    `replayMatch(ruleset, {seed, actions})` reproduz uma mão **bit-idêntica** (teste compara
    mãos/poços/pontos/muro); o rng mulberry32 já era serializável.
 
-## O que ficou pronto nesta rodada (pedido 5)
+## O que ficou pronto nesta rodada (pedido 6)
+1. **Rating Elo + leaderboard**: `server/elo.ts` (Elo round-robin de mesa,
+   K=32, empates 0.5, zero-sum exato). No fim da partida ranqueada o
+   servidor calcula os deltas entre as contas vinculadas e grava
+   (`elo` na migração `003_elo.sql`). `{t:'leaderboard'}` → top 20 por
+   Elo; stats incluem ⭐ Elo; UI com painel 🏅 Classificação.
+   **Testado com uma partida ranqueada COMPLETA** (2 humanos + 2 bots,
+   4 mãos reais, ~3,5 min) verificando Elo zero-sum e leaderboard.
+2. **Chat de mesa + emotes**: `{t:'chat'}` (máx. 140) e `{t:'emote'}`
+   (8 emotes fixos do servidor) para jogadores e espectadores; rate
+   limit de 600ms; **não toca no estado autoritativo** (teste prova que
+   nenhum snapshot é emitido). Painel 💬 no lobby e na mesa.
+3. **MCR otimizado**: `decomposeAll` memorizado (LRU 4096, ~2.4× mais
+   rápido medido em mão rica em decomposições) e
+   `knittedStraightVariants` enumera TODAS as decomposições (o
+   avaliador fica com a melhor — fan de espera incluído). Equivalência
+   frio/quente verificada em 150 mãos aleatórias.
+4. **Bots perseguem mãos irregulares MCR**: shanten dedicado
+   (`ai/knitted.ts`) para 全不靠/七星不靠 e 組合龍; bot hard em MCR,
+   com o tricotado na frente do normal, descarta para minimizá-lo e
+   recusa chamadas (mão fechada); betaori mantém prioridade.
+5. **CI (GitHub Actions)**: `.github/workflows/ci.yml` — jobs *unit*
+   (typecheck + vitest com Postgres 17 de serviço + build) e *e2e*
+   (Playwright/Chromium) em todo push/PR. *Obs.: publicar o arquivo de
+   workflow exige escopo OAuth `workflow`; ver seção abaixo.*
+
+## O que ficou pronto na rodada anterior (pedido 5)
 1. **Tabela MCR completa — os 81 fan oficiais** (`src/game-engine/rules/mcr.ts` reescrito):
    todos os elementos do Green Book (WMO, seção 3.8.1 + Apêndice 1) nos 12 níveis
    (88/64/48/32/24/16/12/8/6/4/2/1), com a **tabela oficial de exclusões** ("does not
@@ -308,9 +334,8 @@ O frontend é estático: `npm run build` → `dist/` em qualquer CDN/static host
 (a tela online deriva a URL do WS do hostname, incluindo o proxy de prévia).
 
 ## Próximos passos sugeridos
-1. Rating Elo nas salas ranqueadas + tabela de classificação (leaderboard) por conta.
-2. Chat de mesa e emotes (canal no WS, sem impacto no estado autoritativo).
-3. Otimização do avaliador MCR (cache de decomposições) e resolução multi-decomposição
-   para fan de espera em mãos ambíguas.
-4. Bots perseguindo mãos irregulares MCR (shanten dedicado para 全不靠/組合龍).
-5. CI (GitHub Actions): unit + typecheck + build + Playwright em cada push.
+1. Histórico de partidas ranqueadas por conta (últimas N + gráfico de Elo).
+2. Salas privadas com senha e opção de mesa com 3 humanos + 1 bot ranqueada.
+3. Notificações de vez (title/som) e timer de descarte com auto-discard.
+4. Mais house rules MCR configuráveis (mínimo de fan, bônus de flores).
+5. Publicar o workflow de CI (instruções na seção de hospedagem) e badges no README.

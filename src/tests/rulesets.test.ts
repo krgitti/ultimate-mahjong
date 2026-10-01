@@ -31,9 +31,6 @@ import { dangerScore, totalRisk, threatLevel, type OppInfo } from '../game-engin
 import { chooseDiscard, chooseCall, type BotView } from '../game-engine/ai/bot';
 import { knittedHonorsShanten, knittedStraightShanten } from '../game-engine/ai/knitted';
 import { createRng } from '../game-engine/tiles/rng';
-import type { TileFace } from '../game-engine/tiles/tiles';
-import { chooseDiscard, type BotView } from '../game-engine/ai/bot';
-import { createRng } from '../game-engine/tiles/rng';
 import { faceIndex, indexToFace, type TileFace } from '../game-engine/tiles/tiles';
 
 const F = (suit: TileFace['suit'], rank: number): TileFace => ({ suit, rank });
@@ -799,7 +796,7 @@ describe('item 6d — shanten tricotado e bot MCR perseguindo mãos irregulares'
     };
     const call = chooseCall(
       view,
-      { discardFace: pin(8), discardSeat: 1, canPon: true, canRon: false, canKan: false, chiOptions: null },
+      { discardFace: pin(8), canPon: true, canRon: false, canKan: false, chiOptions: null },
       'hard',
       createRng(7)
     );
@@ -807,7 +804,7 @@ describe('item 6d — shanten tricotado e bot MCR perseguindo mãos irregulares'
     // ron continua valendo
     const ron = chooseCall(
       view,
-      { discardFace: pin(8), discardSeat: 1, canPon: true, canRon: true, canKan: false, chiOptions: null },
+      { discardFace: pin(8), canPon: true, canRon: true, canKan: false, chiOptions: null },
       'hard',
       createRng(7)
     );
