@@ -116,6 +116,37 @@ export function SettingsScreen({
             </select>
           </label>
         </div>
+        {settings.traditional.rules === 'mcr' && (
+          <div className="row" style={{ gap: '1.2rem', marginTop: 8 }}>
+            <label className="field">
+              MCR — mínimo de fan (house rule)
+              <select
+                value={settings.traditional.mcrMinFan}
+                onChange={(e) =>
+                  onChange({ traditional: { ...settings.traditional, mcrMinFan: Number(e.target.value) } })
+                }
+              >
+                {[1, 3, 5, 8, 16, 24, 32, 48, 64, 88].map((v) => (
+                  <option key={v} value={v}>
+                    {v} fan{v === 8 ? ' (oficial)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              MCR — bônus de posição de flores (house rule)
+              <select
+                value={settings.traditional.mcrFlowerBonus ? 'on' : 'off'}
+                onChange={(e) =>
+                  onChange({ traditional: { ...settings.traditional, mcrFlowerBonus: e.target.value === 'on' } })
+                }
+              >
+                <option value="on">Ligado — flor/estação com o número do vento do lugar dá +1 fan</option>
+                <option value="off">Desligado — só 1 fan por flor/estação</option>
+              </select>
+            </label>
+          </div>
+        )}
         <p className="muted small" style={{ marginTop: 8 }}>
           Limitações por nível: <b>fácil</b> quebra formas úteis e não defende; <b>médio</b> joga a melhor forma mas
           ignora perigo e pontuação; <b>difícil</b> adiciona descarte seguro e noção de valor, sem defesa completa

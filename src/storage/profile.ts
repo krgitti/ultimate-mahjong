@@ -16,6 +16,9 @@ export interface Settings {
     rules: 'classic' | 'chicken' | 'riichi' | 'mcr';
     hands: 4 | 8 | 16;
     botDifficulty: Difficulty;
+    /** house rules MCR (item 7.4) */
+    mcrMinFan: number;
+    mcrFlowerBonus: boolean;
   };
 }
 
@@ -25,7 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   highContrast: false,
   showTimer: true,
   solitaire: { matchMode: 'classic' },
-  traditional: { rules: 'classic', hands: 4, botDifficulty: 'medium' },
+  traditional: { rules: 'classic', hands: 4, botDifficulty: 'medium', mcrMinFan: 8, mcrFlowerBonus: true },
 };
 
 export function loadSettings(): Settings {

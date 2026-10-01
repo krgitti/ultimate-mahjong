@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mcrRuleset, MCR_FAN_TABLE, MCR_EXCLUDES, mcrCacheStats, clearMCRCache, knittedStraightVariants } from '../game-engine/rules/mcr';
+import { mcrRuleset, MCR_FAN_TABLE, MCR_EXCLUDES, MCR_DEFAULTS as MCR_DEFAULTS_CFG, mcrCacheStats, clearMCRCache, knittedStraightVariants } from '../game-engine/rules/mcr';
 import { countsFromFaces } from '../game-engine/traditional/hand';
 import { faceIndex, type TileFace } from '../game-engine/tiles/tiles';
 
@@ -444,5 +444,50 @@ describe('item 6c — cache de decomposições e multi-decomposição', () => {
     const warmMs = performance.now() - t1;
     expect(warmMs).toBeLessThan(coldMs);
     expect(mcrCacheStats().hits).toBeGreaterThanOrEqual(1500);
+  });
+});
+
+describe('item 7d — house rules MCR configuráveis', () => {
+  // mão de 4 fan: 无字(76) + 平和(63) + 连六(71) — 123m 456m 789s 234p + 55p
+  const smallHand = {
+    ...base,
+    concealedCounts: countsFromFaces([
+      man(1), man(2), man(3), man(4), man(5), man(6),
+      sou(7), sou(8), sou(9),
+      pin(2), pin(3), pin(4),
+      pin(5), pin(5),
+    ]),
+    winFace: faceIndex(pin(5)),
+  };
+
+  it('minFan configurável: 6 aprova a mão de 6 fan (fronteira); 8 (oficial) reprova', () => {
+    // a mão vale 6 fan: 门前清(62) + 平和(63) + 连六(71) + 单钓将(79)
+    // (平和 exclui oficialmente 无字)
+    const loose = mcrRuleset({ ...MCR_DEFAULTS_CFG, minFan: 6 });
+    const strict = mcrRuleset({ ...MCR_DEFAULTS_CFG, minFan: 8 });
+    const rLoose = loose.score(smallHand);
+    const rStrict = strict.score(smallHand);
+    expect(rLoose.qualifyingFan).toBe(6);
+    expect(rLoose.meetsMinimum).toBe(true);
+    expect(rLoose.points).toBeGreaterThan(0);
+    expect(rStrict.meetsMinimum).toBe(false);
+    expect(rStrict.points).toBe(0);
+  });
+
+  it('flowerPositionBonus: ligado dá +1 por flor com o número do vento; desligado não', () => {
+    const on = mcrRuleset({ ...MCR_DEFAULTS_CFG, flowerPositionBonus: true });
+    const off = mcrRuleset({ ...MCR_DEFAULTS_CFG, flowerPositionBonus: false });
+    const ctx = {
+      ...smallHand,
+      flowers: 1,
+      flowerRanks: [2], // seatWind do base é 2 → bate
+    };
+    const rOn = on.score(ctx);
+    const rOff = off.score(ctx);
+    expect(rOn.items.some((i) => i.name.includes('Bônus de posição'))).toBe(true);
+    expect(rOn.totalFan).toBe(rOff.totalFan + 1);
+    expect(rOff.items.some((i) => i.name.includes('Bônus'))).toBe(false);
+    // em ambos, a flor em si vale 1 fan (não conta no mínimo)
+    expect(rOn.items.some((i) => i.name.includes('花牌') || i.name.includes('Flores'))).toBe(true);
   });
 });
