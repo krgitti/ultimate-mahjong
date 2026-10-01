@@ -1,5 +1,10 @@
 import type { Settings } from '../../storage/profile';
+import { t, LANG_LABELS, type Lang } from '../../i18n';
 
+/**
+ * Configurações (tela traduzida — item 8.5). As descrições longas das house
+ * rules MCR permanecem em PT (documentado no README).
+ */
 export function SettingsScreen({
   settings,
   onChange,
@@ -9,19 +14,32 @@ export function SettingsScreen({
 }) {
   return (
     <div>
-      <h1 className="page-title">Configurações</h1>
-      <p className="page-sub">Preferências salvas localmente e aplicadas na hora.</p>
+      <h1 className="page-title">{t('set.title')}</h1>
+      <p className="page-sub">{t('set.pageSub')}</p>
 
       <div className="panel" style={{ marginBottom: '0.9rem' }}>
-        <h3 className="panel-title">Interface & Áudio</h3>
+        <h3 className="panel-title">{t('set.interface')}</h3>
         <div className="row" style={{ gap: '1.2rem' }}>
+          <label className="field" style={{ minWidth: 160 }}>
+            {t('set.language')}
+            <select
+              value={settings.language}
+              onChange={(e) => onChange({ language: e.target.value as Lang })}
+            >
+              {(Object.keys(LANG_LABELS) as Lang[]).map((l) => (
+                <option key={l} value={l}>
+                  {LANG_LABELS[l]}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="switch">
             <input
               type="checkbox"
               checked={settings.sound}
               onChange={(e) => onChange({ sound: e.target.checked })}
             />
-            Sons
+            {t('set.sounds')}
           </label>
           <label className="switch">
             <input
@@ -29,7 +47,7 @@ export function SettingsScreen({
               checked={settings.highContrast}
               onChange={(e) => onChange({ highContrast: e.target.checked })}
             />
-            Alto contraste
+            {t('set.contrast')}
           </label>
           <label className="switch">
             <input
@@ -37,10 +55,10 @@ export function SettingsScreen({
               checked={settings.showTimer}
               onChange={(e) => onChange({ showTimer: e.target.checked })}
             />
-            Mostrar cronômetro
+            {t('set.showTimer')}
           </label>
           <label className="field" style={{ minWidth: 200 }}>
-            Escala da interface: {Math.round(settings.uiScale * 100)}%
+            {t('set.uiScale')}: {Math.round(settings.uiScale * 100)}%
             <input
               type="range"
               min={0.8}
@@ -54,15 +72,15 @@ export function SettingsScreen({
       </div>
 
       <div className="panel" style={{ marginBottom: '0.9rem' }}>
-        <h3 className="panel-title">Mahjong Solitaire</h3>
+        <h3 className="panel-title">{t('set.solitaire')}</h3>
         <label className="field" style={{ maxWidth: 380 }}>
-          Regra de combinação de peças
+          {t('set.matchRule')}
           <select
             value={settings.solitaire.matchMode}
             onChange={(e) => onChange({ solitaire: { matchMode: e.target.value as 'classic' | 'strict' } })}
           >
-            <option value="classic">Clássica (flor↔flor, estação↔estação)</option>
-            <option value="strict">Estrita (apenas faces idênticas)</option>
+            <option value="classic">{t('set.matchClassic')}</option>
+            <option value="strict">{t('set.matchStrict')}</option>
           </select>
         </label>
         <p className="muted small" style={{ marginTop: 6 }}>
@@ -71,37 +89,37 @@ export function SettingsScreen({
       </div>
 
       <div className="panel">
-        <h3 className="panel-title">Mahjong Tradicional (Hong Kong)</h3>
+        <h3 className="panel-title">{t('set.traditional')}</h3>
         <div className="row" style={{ gap: '1.2rem' }}>
           <label className="field">
-            Regras
+            {t('set.rules')}
             <select
               value={settings.traditional.rules}
               onChange={(e) =>
                 onChange({ traditional: { ...settings.traditional, rules: e.target.value as 'classic' | 'chicken' | 'riichi' | 'mcr' } })
               }
             >
-              <option value="classic">Clássica (mínimo 3 fan)</option>
-              <option value="chicken">Chicken hand (mínimo 1 fan)</option>
-              <option value="riichi">Riichi (japonês — yaku/han, sete pares, riichi)</option>
-              <option value="mcr">MCR (competição — mínimo 8 fan, sete pares, órfãos)</option>
+              <option value="classic">{t('set.rulesClassic')}</option>
+              <option value="chicken">{t('set.rulesChicken')}</option>
+              <option value="riichi">{t('set.rulesRiichi')}</option>
+              <option value="mcr">{t('set.rulesMcr')}</option>
             </select>
           </label>
           <label className="field">
-            Duração da partida
+            {t('set.duration')}
             <select
               value={settings.traditional.hands}
               onChange={(e) =>
                 onChange({ traditional: { ...settings.traditional, hands: Number(e.target.value) as 4 | 8 | 16 } })
               }
             >
-              <option value={4}>4 mãos (rodada Leste)</option>
-              <option value={8}>8 mãos (Leste + Sul)</option>
-              <option value={16}>16 mãos (jogo completo)</option>
+              <option value={4}>{t('set.hands4')}</option>
+              <option value={8}>{t('set.hands8')}</option>
+              <option value={16}>{t('set.hands16')}</option>
             </select>
           </label>
           <label className="field">
-            Dificuldade dos bots
+            {t('set.botDifficulty')}
             <select
               value={settings.traditional.botDifficulty}
               onChange={(e) =>
@@ -110,16 +128,16 @@ export function SettingsScreen({
                 })
               }
             >
-              <option value="easy">Fácil — descartes quase aleatórios</option>
-              <option value="medium">Médio — minimiza shanten, sem defesa</option>
-              <option value="hard">Difícil — shanten + segurança + valor</option>
+              <option value="easy">{t('set.botEasy')}</option>
+              <option value="medium">{t('set.botMedium')}</option>
+              <option value="hard">{t('set.botHard')}</option>
             </select>
           </label>
         </div>
         {settings.traditional.rules === 'mcr' && (
           <div className="row" style={{ gap: '1.2rem', marginTop: 8 }}>
             <label className="field">
-              MCR — mínimo de fan (house rule)
+              {t('set.mcrMinFan')} (house rule)
               <select
                 value={settings.traditional.mcrMinFan}
                 onChange={(e) =>
@@ -134,7 +152,7 @@ export function SettingsScreen({
               </select>
             </label>
             <label className="field">
-              MCR — bônus de posição de flores (house rule)
+              {t('set.mcrFlowerBonus')} (house rule)
               <select
                 value={settings.traditional.mcrFlowerBonus ? 'on' : 'off'}
                 onChange={(e) =>

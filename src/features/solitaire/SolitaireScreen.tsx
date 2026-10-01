@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { t } from '../../i18n';
 import type { SolitaireLaunch } from '../../app/App';
 import {
   createSolitaire,
@@ -359,14 +360,14 @@ export function SolitaireScreen({ launch }: { launch: SolitaireLaunch | null }) 
   return (
     <div className="solitaire-screen">
       <div className="sol-toolbar" role="toolbar" aria-label="Controles da partida">
-        <button className="btn btn-sm" onClick={() => setShowNewGame(true)} title="Novo jogo (N)">🗎 Novo</button>
-        <button className="btn btn-sm" onClick={doUndo} disabled={game.history.length === 0} title="Desfazer (U)">↩ Desfazer</button>
+        <button className="btn btn-sm" onClick={() => setShowNewGame(true)} title={`${t('sol.newGame')} (N)`}>🗎 {t('sol.newGame')}</button>
+        <button className="btn btn-sm" onClick={doUndo} disabled={game.history.length === 0} title={`${t('sol.undo')} (U)`}>↩ {t('sol.undo')}</button>
         <button className="btn btn-sm" onClick={doRedo} disabled={game.future.length === 0} title="Refazer (R)">↪ Refazer</button>
-        <button className="btn btn-sm" onClick={doHint} title="Dica (H)">💡 Dica</button>
-        <button className="btn btn-sm" onClick={doShuffle} title="Embaralhar (S)">🔀 Embaralhar</button>
+        <button className="btn btn-sm" onClick={doHint} title={`${t('sol.hint')} (H)`}>💡 {t('sol.hint')}</button>
+        <button className="btn btn-sm" onClick={doShuffle} title={`${t('sol.shuffle')} (S)`}>🔀 {t('sol.shuffle')}</button>
         <button className="btn btn-sm" onClick={doRestart} title="Reiniciar com as mesmas peças">⟳ Reiniciar</button>
         <div className="sol-status" aria-live="polite">
-          <span>Pares: <b>{pairsLeft}</b></span>
+          <span>{t('sol.pairs')} <b>{pairsLeft}</b></span>
           <span>Pontos: <b>{game.score}</b></span>
           {settings.showTimer && <span>Tempo: <b>{fmtTime(game.elapsedMs)}</b></span>}
           <span>Jogadas: <b>{game.moves}</b></span>

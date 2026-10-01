@@ -1,5 +1,6 @@
 import { navigate, type SolitaireLaunch } from '../../app/App';
 import { CAMPAIGN, loadCampaign, loadStats } from '../../storage/profile';
+import { t } from '../../i18n';
 
 export function HomeScreen({ onLaunchSolitaire }: { onLaunchSolitaire: (l: SolitaireLaunch | null) => void }) {
   const stats = loadStats();
@@ -10,77 +11,73 @@ export function HomeScreen({ onLaunchSolitaire }: { onLaunchSolitaire: (l: Solit
   const cards = [
     {
       icon: '🀫',
-      name: 'Jogar Solitaire',
-      desc: 'Combine pares de peças livres e limpe o tabuleiro. 23 layouts, dicas, desfazer e campanhas.',
+      name: t('home.c1n'),
+      desc: t('home.c1d'),
       action: () => onLaunchSolitaire(null),
-      meta: `${stats.solitaire.gamesWon} vitórias`,
+      meta: t('home.c1m', { n: stats.solitaire.gamesWon }),
     },
     {
       icon: '🎴',
-      name: 'Mahjong Tradicional',
-      desc: 'Hong Kong Mahjong: 4 assentos, você contra 3 bots. Chamadas, fan e pagamento real.',
+      name: t('home.c2n'),
+      desc: t('home.c2d'),
       action: () => navigate('traditional'),
-      meta: `${stats.traditional.handsWon}/${stats.traditional.handsPlayed} mãos vencidas`,
+      meta: t('home.c2m', { a: stats.traditional.handsWon, b: stats.traditional.handsPlayed }),
     },
     {
       icon: '🤖',
-      name: 'Jogar contra IA',
-      desc: 'Três níveis de bots: heurísticas de shanten, segurança e valor de mão. Escolha a dificuldade em Config.',
+      name: t('home.c3n'),
+      desc: t('home.c3d'),
       action: () => navigate('traditional'),
-      meta: 'Fácil · Médio · Difícil',
+      meta: t('home.c3m'),
     },
     {
       icon: '🌐',
-      name: 'Jogar online',
-      desc: 'Multiplayer real via servidor autoritativo: crie uma sala, compartilhe o código e jogue com amigos (bots completam a mesa).',
+      name: t('home.c4n'),
+      desc: t('home.c4d'),
       action: () => navigate('online'),
-      meta: 'requer npm run server',
+      meta: t('home.c4m'),
     },
     {
       icon: '🎓',
-      name: 'Aprender',
-      desc: 'Tutoriais interativos: liberdade e camadas no Solitaire; compras, chamadas e vitória no Tradicional.',
+      name: t('home.c5n'),
+      desc: t('home.c5d'),
       action: () => navigate('learn'),
-      meta: '2 trilhas guiadas',
+      meta: t('home.c5m'),
     },
     {
       icon: '🏆',
-      name: 'Desafios',
-      desc: 'Tabuleiros determinísticos com sementes fixas, contrarrelógio e restrições de dicas.',
+      name: t('home.c6n'),
+      desc: t('home.c6d'),
       action: () => navigate('challenges'),
-      meta: `${Object.keys(campaign).length ? `${stars}★` : ''} campanha nível ${nextLevel.id}`,
+      meta: t('home.c6m', { stars, lvl: nextLevel.id }),
     },
     {
       icon: '📈',
-      name: 'Estatísticas',
-      desc: 'Histórico de partidas, melhor pontuação, vitórias por tsumo/ron e tempo total de jogo.',
+      name: t('home.c7n'),
+      desc: t('home.c7d'),
       action: () => navigate('stats'),
-      meta: 'Salvo localmente',
+      meta: t('home.c7m'),
     },
     {
       icon: '🛠️',
-      name: 'Editor de layouts',
-      desc: 'Desenhe seu próprio tabuleiro de Solitaire, camada por camada, e jogue nele.',
+      name: t('home.c8n'),
+      desc: t('home.c8d'),
       action: () => navigate('editor'),
-      meta: 'Layouts personalizados',
+      meta: t('home.c8m'),
     },
     {
       icon: '⚙️',
-      name: 'Configurações',
-      desc: 'Som, escala da interface, alto contraste, regras de combinação, regras de Hong Kong e dificuldade.',
+      name: t('home.c9n'),
+      desc: t('home.c9d'),
       action: () => navigate('settings'),
-      meta: 'Perfil local',
+      meta: t('home.c9m'),
     },
   ];
 
   return (
     <div>
-      <h1 className="page-title">Bem-vindo à mesa</h1>
-      <p className="page-sub">
-        Duas modalidades completas: o clássico <strong>Mahjong Solitaire</strong> (pares de peças livres) e o{' '}
-        <strong>Mahjong tradicional de 4 jogadores</strong> na variante Hong Kong, com motor de regras testado,
-        bots com estratégia real e progresso salvo no seu navegador.
-      </p>
+      <h1 className="page-title">{t('home.title')}</h1>
+      <p className="page-sub">{t('home.sub')}</p>
       <div className="grid-cards">
         {cards.map((c) => (
           <button key={c.name} className="card" onClick={c.action}>

@@ -1,10 +1,13 @@
 import { store, KEYS } from './storage';
 import type { MatchMode } from '../game-engine/tiles/tiles';
 import type { Difficulty } from '../game-engine/ai/bot';
+import { isLang, type Lang } from '../i18n';
 
 /* ---------------- Settings ---------------- */
 
 export interface Settings {
+  /** idioma das telas (item 8.5) */
+  language: Lang;
   sound: boolean;
   uiScale: number; // 0.8 .. 1.3
   highContrast: boolean;
@@ -23,6 +26,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  language: 'pt',
   sound: true,
   uiScale: 1,
   highContrast: false,
@@ -36,6 +40,7 @@ export function loadSettings(): Settings {
   return {
     ...DEFAULT_SETTINGS,
     ...s,
+    language: isLang(s.language) ? s.language : 'pt',
     solitaire: { ...DEFAULT_SETTINGS.solitaire, ...(s.solitaire ?? {}) },
     traditional: { ...DEFAULT_SETTINGS.traditional, ...(s.traditional ?? {}) },
   };

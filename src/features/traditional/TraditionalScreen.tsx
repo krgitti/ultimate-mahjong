@@ -28,6 +28,7 @@ import {
 } from '../../game-engine/traditional/engine';
 import { HK_DEFAULTS, HK_CHICKEN } from '../../game-engine/rules/hongkong';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
+import { t } from '../../i18n';
 import { riichiRuleset } from '../../game-engine/rules/riichi';
 import { mcrRuleset } from '../../game-engine/rules/mcr';
 import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
@@ -434,8 +435,8 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
           </p>
         </div>
         <div className="row">
-          <button className="btn btn-sm" onClick={() => setShowRules(true)}>📜 Regras</button>
-          <button className="btn btn-sm" onClick={newMatchNow}>⟳ Nova partida</button>
+          <button className="btn btn-sm" onClick={() => setShowRules(true)}>📜 {t('trad.rules')}</button>
+          <button className="btn btn-sm" onClick={newMatchNow}>⟳ {t('trad.newMatch')}</button>
         </div>
       </div>
 
@@ -709,10 +710,10 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
               Fechar
             </button>
             <button className="btn" onClick={() => setShowReplay(true)}>
-              🎬 Rever partida
+              🎬 {t('trad.replay')}
             </button>
             <button className="btn" onClick={newMatchNow}>
-              Nova partida
+              {t('trad.newMatch')}
             </button>
           </div>
         </Modal>

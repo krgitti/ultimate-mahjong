@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ToastHost } from '../components/ui';
 import { setSoundEnabled } from '../components/sound';
 import { loadSettings, saveSettings, type Settings } from '../storage/profile';
+import { setLang, t } from '../i18n';
 import { HomeScreen } from '../features/home/HomeScreen';
 import { SolitaireScreen } from '../features/solitaire/SolitaireScreen';
 import { TraditionalScreen } from '../features/traditional/TraditionalScreen';
@@ -49,14 +50,15 @@ function parseHash(): Route {
   }
 }
 
-const NAV: { route: string; label: string }[] = [
-  { route: '', label: 'Início' },
-  { route: 'solitaire', label: 'Solitaire' },
-  { route: 'traditional', label: 'Tradicional' },
-  { route: 'learn', label: 'Aprender' },
-  { route: 'challenges', label: 'Desafios' },
-  { route: 'stats', label: 'Estatísticas' },
-  { route: 'settings', label: 'Config' },
+// labels traduzidos no render via t() (item 8.5)
+const NAV: { route: string; key: string }[] = [
+  { route: '', key: 'nav.home' },
+  { route: 'solitaire', key: 'nav.solitaire' },
+  { route: 'traditional', key: 'nav.traditional' },
+  { route: 'learn', key: 'nav.learn' },
+  { route: 'challenges', key: 'nav.challenges' },
+  { route: 'stats', key: 'nav.stats' },
+  { route: 'settings', key: 'nav.settings' },
 ];
 
 export function navigate(path: string) {
@@ -79,6 +81,7 @@ export function App() {
     document.documentElement.style.setProperty('--scale', String(settings.uiScale));
     document.body.classList.toggle('contrast-high', settings.highContrast);
     setSoundEnabled(settings.sound);
+    setLang(settings.language); // item 8.5: telas re-renderizam com o novo idioma
   }, [settings]);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -146,7 +149,7 @@ export function App() {
                   else navigate(n.route);
                 }}
               >
-                {n.label}
+                {t(n.key)}
               </button>
             ))}
           </nav>

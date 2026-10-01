@@ -5,6 +5,7 @@ import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
 import { ReplayReview } from '../traditional/ReplayReview';
 import { inviteLink, roomFromSearch, copyText } from './invite';
+import { t } from '../../i18n';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
@@ -93,7 +94,7 @@ function HistoryPanel({
   }
   return (
     <div className="panel" style={{ marginTop: 8 }}>
-      <h3 className="panel-title">📜 Histórico ranqueado (últimas {rows.length})</h3>
+      <h3 className="panel-title">{t('on.history', { n: rows.length })}</h3>
       {rows.length === 0 ? (
         <p className="muted small">Nenhuma partida ranqueada ainda.</p>
       ) : (
@@ -126,10 +127,10 @@ function HistoryPanel({
                 {r.hasReplay && onReview && (
                   <button
                     className="btn btn-sm"
-                    title="Rever a partida"
+                    title={t('on.review')}
                     onClick={() => onReview(r.playedAt)}
                   >
-                    🎬 Rever
+                    {t('on.review')}
                   </button>
                 )}
               </div>
@@ -374,14 +375,10 @@ export function OnlineScreen() {
   if (phase === 'form') {
     return (
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
-        <h1 className="page-title">Jogar online (multiplayer real)</h1>
-        <p className="page-sub">
-          Servidor autoritativo local: as mãos ocultas nunca saem do servidor; cada assento tem um token de
-          reconexão. Crie uma sala e compartilhe o código, ou entre com um código. Assentos vazios podem ser
-          preenchidos por bots na hora de começar.
-        </p>
+        <h1 className="page-title">{t('on.title')}</h1>
+        <p className="page-sub">{t('on.sub')}</p>
         <label className="field">
-          Seu nome
+          {t('on.name')}
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogador" />
         </label>
         <label className="field">
@@ -395,7 +392,7 @@ export function OnlineScreen() {
         </label>
         <div className="row" style={{ marginTop: 10 }}>
           <button className="btn btn-primary" onClick={() => connect({ t: 'create', name: name || 'Jogador', rules: rulesSel, accountToken: accountToken ?? undefined, password: roomPw || undefined })}>
-            ✚ Criar sala
+            ✚ {t('on.create')}
           </button>
           <button
             className="btn"
@@ -409,7 +406,7 @@ export function OnlineScreen() {
             type="password"
             value={roomPw}
             onChange={(e) => setRoomPw(e.target.value)}
-            placeholder="🔒 Senha (opcional)"
+            placeholder={t('on.pwPlaceholder')}
             style={{ width: 150 }}
             maxLength={32}
             aria-label="Senha da sala"
@@ -436,7 +433,7 @@ export function OnlineScreen() {
           <input
             value={joinCode}
             onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-            placeholder="Código da sala (ex.: A7K2)"
+            placeholder={t('on.codePlaceholder')}
             style={{ width: 180 }}
             maxLength={4}
           />
@@ -449,40 +446,39 @@ export function OnlineScreen() {
             maxLength={32}
             aria-label="Senha para entrar"
           />
-          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador', accountToken: accountToken ?? undefined, password: joinPw || undefined })}>Entrar na sala</button>
+          <button className="btn" onClick={() => connect({ t: 'join', code: joinCode, name: name || 'Jogador', accountToken: accountToken ?? undefined, password: joinPw || undefined })}>{t('on.join')}</button>
           <button className="btn" onClick={() => connect({ t: 'spectate', code: joinCode, name: name || 'Espectador', password: joinPw || undefined })}>👁 Assistir</button>
         </div>
         <div className="row" style={{ marginTop: 10 }}>
           <input
             value={accountUser}
             onChange={(e) => setAccountUser(e.target.value)}
-            placeholder="Conta (opcional)"
+            placeholder={t('on.accountPlaceholder')}
             style={{ width: 180 }}
             maxLength={32}
           />
-          <button className="btn" onClick={() => connect({ t: 'account', username: accountUser })}>Criar conta</button>
+          <button className="btn" onClick={() => connect({ t: 'account', username: accountUser })}>{t('on.createAccount')}</button>
           {accountToken && (
-            <button className="btn" onClick={() => connect({ t: 'join', accountToken })}>↻ Retomar minha sala</button>
+            <button className="btn" onClick={() => connect({ t: 'join', accountToken })}>{t('on.resume')}</button>
           )}
           {accountToken && (
-            <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>📊 Estatísticas</button>
+            <button className="btn" onClick={() => connect({ t: 'stats', accountToken })}>{t('on.statsBtn')}</button>
           )}
-          <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>🏅 Classificação</button>
+          <button className="btn" onClick={() => connect({ t: 'leaderboard' })}>{t('on.leaderboardBtn')}</button>
           {accountToken && (
-            <button className="btn" onClick={() => connect({ t: 'history', accountToken })}>📜 Histórico</button>
+            <button className="btn" onClick={() => connect({ t: 'history', accountToken })}>{t('on.historyBtn')}</button>
           )}
         </div>
         {stats && (
           <p className="muted small" style={{ marginTop: 6 }}>
             🏆 Ranqueadas: <b>{stats.played}</b> partidas · <b>{stats.wins}</b> vitórias ·{' '}
             <b>{stats.points}</b> pontos · ⭐ Elo <b>{stats.elo}</b>
-            {stats.season && <> · 🎖️ Temporada <b>{stats.season}</b></>}
+            {stats.season && <> · 🎖️ {t('on.season')} <b>{stats.season}</b></>}
           </p>
         )}
         {stats?.prevSeason && (
           <p className="muted small" style={{ marginTop: 4 }}>
-            🎖️ Temporada {stats.prevSeason} encerrada com ⭐ <b>{stats.prevElo}</b> — o Elo reinicia
-            a cada mês.
+            🎖️ {t('on.seasonEnded', { season: stats.prevSeason, elo: stats.prevElo ?? 1500 })}
           </p>
         )}
         {hist && (
@@ -500,7 +496,7 @@ export function OnlineScreen() {
         )}
         {leader && (
           <div className="panel" style={{ marginTop: 8 }}>
-            <h3 className="panel-title">🏅 Classificação (Elo){leaderSeason ? ` — Temporada ${leaderSeason}` : ''}</h3>
+            <h3 className="panel-title">{t('on.leaderboard')}{leaderSeason ? ` — ${t('on.season')} ${leaderSeason}` : ''}</h3>
             {leader.length === 0 ? (
               <p className="muted small">Nenhuma conta ainda.</p>
             ) : (
@@ -547,12 +543,12 @@ export function OnlineScreen() {
         )}
         {meta?.isPrivate && <p className="page-sub">🔒 Sala privada — quem entrar precisa da senha.</p>}
         <p className="page-sub">
-          Compartilhe o código <b>{code}</b>. Seu token de reconexão fica salvo nesta aba.{' '}
+          {t('on.share')} <b>{code}</b>. {' '}
           <button className="btn btn-sm" onClick={() => doCopy('código', code)}>
-            {copied === 'código' ? '✅ Copiado' : '📋 Copiar código'}
+            {copied === 'código' ? t('on.copied') : t('on.copyCode')}
           </button>{' '}
           <button className="btn btn-sm" onClick={() => doCopy('link', inviteLink(window.location.href, code))}>
-            {copied === 'link' ? '✅ Copiado' : '🔗 Copiar convite'}
+            {copied === 'link' ? t('on.copied') : t('on.copyLink')}
           </button>
         </p>
         <div className="panel">

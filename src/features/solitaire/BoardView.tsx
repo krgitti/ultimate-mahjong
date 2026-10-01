@@ -1,4 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
+import { t } from '../../i18n';
 import type { SolitaireState, SolTile } from '../../game-engine/solitaire/engine';
 import { isFree } from '../../game-engine/solitaire/engine';
 import { expandLayout } from '../../game-engine/layouts/types';
@@ -98,9 +99,9 @@ export function BoardView({ state, bounds, selectedId, hintIds, removingIds, sha
       <button
         className="btn btn-sm board-zoom-btn"
         onClick={() => setZoomed((z) => !z)}
-        aria-label={zoomed ? 'Ajustar tabuleiro à tela' : 'Ampliar tabuleiro'}
+        aria-label={zoomed ? t('sol.zoomOut') : t('sol.zoomIn')}
       >
-        {zoomed ? '🔎 Ajustar' : '🔍 Ampliar'}
+        {zoomed ? t('sol.zoomOutShort') : t('sol.zoomInShort')}
       </button>
       <div
         className="board-viewport"
