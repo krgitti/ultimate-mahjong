@@ -21,7 +21,7 @@ interface Snap {
     offers: { seat: number; kind: string }[];
   };
   myActions?: { legal: number[] };
-  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number; ranked?: boolean; isPrivate?: boolean };
+  meta?: { code: string; started: boolean; seats: ({ name: string; connected: boolean } | null)[]; spectators?: number; ranked?: boolean; isPrivate?: boolean; turnExpiresAt?: number };
   code?: string;
   token?: string;
   accountToken?: string;
@@ -816,4 +816,38 @@ describe('item 7b — salas privadas e ranqueada 3 humanos + 1 bot', () => {
       await server.close();
     }
   }, 90000);
+});
+
+describe('item 7c — timer de descarte com auto-discard', () => {
+  it('servidor descarta sozinho quando o humano estoura o prazo', async () => {
+    const PORT11 = 8913;
+    const server = startServer({ port: PORT11, discardTimeoutMs: 1500 });
+    try {
+      const A = client(PORT11);
+      autoPass(A, 0); // atende chamadas, mas NÃO descarta — sem autoPlay
+      if (A.ws.readyState !== WebSocket.OPEN) await new Promise((r) => A.ws.on('open', r));
+      A.ws.send(JSON.stringify({ t: 'create', name: 'Ana' }));
+      await A.next((m) => m.t === 'joined', 15000, 'joined');
+      A.ws.send(JSON.stringify({ t: 'start', fillBots: true }));
+
+      // minha vez, com deadline anunciado no meta
+      const myTurn = await A.next(
+        (m) => m.t === 'snapshot' && m.view?.phase === 'discard' && m.view.current === 0 && m.meta?.turnExpiresAt !== undefined,
+        30000,
+        'my turn with deadline'
+      );
+      expect(myTurn.meta!.turnExpiresAt!).toBeGreaterThan(Date.now() - 5000);
+      const ponds0 = myTurn.view!.players[0].discards.length;
+
+      // fico parado: o servidor deve descartar por mim (~1.5s)
+      const after = await A.next(
+        (m) => m.t === 'snapshot' && (m.view?.players[0].discards.length ?? 0) > ponds0,
+        15000,
+        'auto-discard'
+      );
+      expect(after.view!.players[0].discards.length).toBe(ponds0 + 1);
+    } finally {
+      await server.close();
+    }
+  }, 60000);
 });

@@ -50,6 +50,8 @@ export interface ServerOptions {
   hands?: number;
   /** postgres connection string; when set, rooms persist and survive restarts */
   databaseUrl?: string;
+  /** tempo (ms) do timer de descarte humano antes do auto-discard (item 7.3) */
+  discardTimeoutMs?: number;
 }
 
 interface Session {
@@ -81,6 +83,9 @@ interface Room {
   rankedRecorded: boolean;
   /** salas privadas (item 7.2): hash sha256 da senha, ou null */
   passwordHash: string | null;
+  /** timer de descarte (item 7.3): chave do turno atual e deadline */
+  discardKey: string | null;
+  discardDeadline: number | null;
 }
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -134,6 +139,8 @@ export function startServer(opts: ServerOptions) {
       ranked: rec.ranked ?? false,
       rankedRecorded: false, // match-over rooms are deleted, never rebuilt
       passwordHash: rec.passwordHash ?? null,
+      discardKey: null,
+      discardDeadline: null,
     };
     rooms.set(rec.code, room);
     return room;
@@ -240,6 +247,8 @@ export function startServer(opts: ServerOptions) {
       ranked: false,
       rankedRecorded: false,
       passwordHash: null,
+      discardKey: null,
+      discardDeadline: null,
     };
     four.forEach((e, seat) => {
       const sess: Session = { ws: e.ws, token: token(), name: e.name, connected: true, lastSeen: Date.now(), accountId: e.accountId };
@@ -292,6 +301,7 @@ export function startServer(opts: ServerOptions) {
             spectators: room.spectators.length,
             ranked: room.ranked,
             isPrivate: room.passwordHash !== null,
+            turnExpiresAt: room.discardDeadline ?? undefined,
           },
         });
       }
@@ -309,6 +319,7 @@ export function startServer(opts: ServerOptions) {
             spectators: room.spectators.length,
             ranked: room.ranked,
             isPrivate: room.passwordHash !== null,
+            turnExpiresAt: room.discardDeadline ?? undefined,
           },
         });
       }
@@ -348,6 +359,11 @@ export function startServer(opts: ServerOptions) {
 
   function pump(room: Room) {
     const s = room.state;
+    // timer de descarte só vale para humano presente na fase de descarte
+    if (s.phase !== 'discard' || isBotSeat(room, s.current) || isAway(room, s.current)) {
+      room.discardKey = null;
+      room.discardDeadline = null;
+    }
     if (s.phase === 'hand-over') {
       if (room.handOverAt === null) room.handOverAt = Date.now();
       if (Date.now() - room.handOverAt > 6000) {
@@ -427,8 +443,30 @@ export function startServer(opts: ServerOptions) {
         room.pendingRob.clear();
         room.callWaitingSince = Date.now();
         broadcast(room);
+      } else {
+        // item 7.3: timer de descarte com auto-discard (autoritativo).
+        // A chave identifica o turno (mão:assento:muro); ao trocar, o
+        // deadline reinicia e o broadcast leva turnExpiresAt ao cliente.
+        const dkey = `${s.handNumber}:${seat}:${s.wall.length}`;
+        if (room.discardKey !== dkey) {
+          room.discardKey = dkey;
+          room.discardDeadline = Date.now() + (opts.discardTimeoutMs ?? 30000);
+          broadcast(room);
+        }
+        if (room.discardDeadline !== null && Date.now() > room.discardDeadline) {
+          const tileId = legalDiscards(s, seat)[0];
+          if (tileId !== undefined) {
+            discard(s, tileId);
+            room.pendingCall.clear();
+            room.pendingRob.clear();
+            room.callWaitingSince = Date.now();
+            room.discardKey = null;
+            room.discardDeadline = null;
+            broadcast(room);
+          }
+        }
       }
-      return; // human online: wait for their action
+      return; // human online: wait for their action (ou o timer acima)
     }
 
     if (s.phase === 'calls') {
@@ -572,6 +610,8 @@ export function startServer(opts: ServerOptions) {
           ranked: wantRanked,
           rankedRecorded: false,
           passwordHash: typeof msg.password === 'string' && msg.password ? sha256pw(msg.password) : null,
+          discardKey: null,
+          discardDeadline: null,
         };
         const sess: Session = { ws, token: token(), name: String(msg.name || 'Jogador 1'), connected: true, lastSeen: Date.now(), accountId: null };
         room.seats[0] = sess;

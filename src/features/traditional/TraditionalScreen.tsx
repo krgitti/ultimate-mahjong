@@ -287,6 +287,48 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
   const canHumanRiichi = humanTurn && canRiichi(s, 0);
   const myLegal = humanTurn ? new Set(legalDiscards(s, 0)) : new Set<number>();
 
+  // item 7.3: notificação de vez (title + som) — offline
+  useEffect(() => {
+    if (!humanTurn) return;
+    sfx.click();
+    const original = document.title;
+    let on = false;
+    document.title = '▶ Sua vez!';
+    const flash = window.setInterval(() => {
+      on = !on;
+      document.title = on ? original : '▶ Sua vez!';
+    }, 1000);
+    return () => {
+      window.clearInterval(flash);
+      document.title = original;
+    };
+  }, [humanTurn]);
+
+  // item 7.3: timer de descarte com auto-discard (30s) — offline
+  const [turnLeft, setTurnLeft] = useState(30);
+  useEffect(() => {
+    if (!humanTurn) {
+      setTurnLeft(30);
+      return;
+    }
+    setTurnLeft(30);
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      const left = 30 - Math.floor((Date.now() - startedAt) / 1000);
+      setTurnLeft(left);
+      if (left <= 0) {
+        window.clearInterval(id);
+        const first = legalDiscards(s, 0)[0];
+        if (first !== undefined && discard(s, first)) {
+          setSelectedTile(null);
+          bump();
+        }
+      }
+    }, 250);
+    return () => window.clearInterval(id);
+    // s.events.length: reinicia o timer quando um novo turno começa
+  }, [humanTurn, s.events.length]);
+
   const doDiscard = (tileId: number) => {
     if (!humanTurn || !myLegal.has(tileId)) return;
     if (discard(s, tileId)) {
@@ -490,6 +532,9 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
           <div className="action-bar">
             {humanTurn && (
               <>
+                <span className="muted small" role="timer" aria-label="Tempo para descartar">
+                  ⏳ <b>{Math.max(0, turnLeft)}s</b> (auto-descarte)
+                </span>
                 <button
                   className="btn btn-primary btn-sm"
                   disabled={selectedTile === null}

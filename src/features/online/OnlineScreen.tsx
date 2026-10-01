@@ -21,6 +21,7 @@ interface Meta {
   canStart: boolean;
   ranked?: boolean;
   isPrivate?: boolean;
+  turnExpiresAt?: number;
 }
 interface MyActions {
   legal: number[];
@@ -136,6 +137,30 @@ export function OnlineScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  // item 7.3: notificação de vez (title + som) e countdown do timer de descarte
+  const myTurn = phase === 'table' && view?.phase === 'discard' && view.current === mySeat && mySeat >= 0;
+  const [nowTick, setNowTick] = useState(Date.now());
+  useEffect(() => {
+    if (!myTurn) return;
+    sfx.click();
+    const original = document.title;
+    let on = false;
+    document.title = '▶ Sua vez!';
+    const id = setInterval(() => {
+      on = !on;
+      document.title = on ? original : '▶ Sua vez!';
+    }, 1000);
+    return () => {
+      clearInterval(id);
+      document.title = original;
+    };
+  }, [myTurn]);
+  useEffect(() => {
+    if (!myTurn) return;
+    const id = setInterval(() => setNowTick(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [myTurn]);
 
   const connect = (firstMsg?: Record<string, unknown>) => {
     const ws = new WebSocket(onlineWsUrl());
@@ -529,6 +554,24 @@ export function OnlineScreen() {
               </button>
             ))}
           </div>
+          {myTurn && meta?.turnExpiresAt && (
+            <div className="row small" style={{ marginBottom: 6 }} role="timer" aria-label="Tempo para descartar">
+              <span>
+                ⏳ <b>{Math.max(0, Math.ceil((meta.turnExpiresAt - nowTick) / 1000))}s</b> para descartar
+                (depois o servidor descarta por você)
+              </span>
+              <span style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 2, overflow: 'hidden' }}>
+                <span
+                  style={{
+                    display: 'block',
+                    height: '100%',
+                    background: 'var(--gold, #d4af37)',
+                    width: `${Math.min(100, Math.max(0, ((meta.turnExpiresAt - nowTick) / 30000) * 100))}%`,
+                  }}
+                />
+              </span>
+            </div>
+          )}
           <div className="action-bar">
             {humanTurn && actions.canTsumo && (
               <button className="btn btn-primary btn-sm" onClick={() => send({ t: 'action', action: { kind: 'tsumo' } })}>🏆 TSUMO!</button>
