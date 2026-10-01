@@ -29,6 +29,10 @@ import {
 import { HK_DEFAULTS, HK_CHICKEN } from '../../game-engine/rules/hongkong';
 import { hkRuleset } from '../../game-engine/rules/ruleset';
 import { t } from '../../i18n';
+import { exportReplay, parseReplay, rulesetForReplay } from './replayIO';
+import { copyText } from '../online/invite';
+import type { ReplayRecord } from '../../game-engine/traditional/engine';
+import type { Ruleset } from '../../game-engine/rules/ruleset';
 import { riichiRuleset } from '../../game-engine/rules/riichi';
 import { mcrRuleset } from '../../game-engine/rules/mcr';
 import { chooseDiscard, chooseCall, type BotView, type Difficulty } from '../../game-engine/ai/bot';
@@ -256,6 +260,9 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
 
   const humanCanRob = s.phase === 'calls-rob' && s.offers.some((o) => o.seat === 0);
   const [showReplay, setShowReplay] = useState(false);
+  // item 9.2: replay importado (exportar/importar JSON)
+  const [importedReplay, setImportedReplay] = useState<{ record: ReplayRecord; ruleset: Ruleset } | null>(null);
+  const [ioMsg, setIoMsg] = useState<string | null>(null);
 
   // tenpai information: which tiles complete the hand and how many remain
   const waitsInfo = useMemo(() => {
@@ -712,6 +719,31 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
             <button className="btn" onClick={() => setShowReplay(true)}>
               🎬 {t('trad.replay')}
             </button>
+            <button
+              className="btn"
+              onClick={async () => {
+                const ok = await copyText(exportReplay(serializeReplay(s)));
+                setIoMsg(ok ? t('trad.exported') : t('trad.exportFailed'));
+              }}
+            >
+              ⬇ {t('trad.exportReplay')}
+            </button>
+            <button
+              className="btn"
+              onClick={() => {
+                const raw = window.prompt(t('trad.importPrompt'));
+                if (!raw) return;
+                const rec = parseReplay(raw);
+                if (!rec) {
+                  setIoMsg(t('trad.importFailed'));
+                  return;
+                }
+                setImportedReplay({ record: rec, ruleset: rulesetForReplay(rec.rulesetId) });
+                setMatchOverAck(true);
+              }}
+            >
+              ⬆ {t('trad.importReplay')}
+            </button>
             <button className="btn" onClick={newMatchNow}>
               {t('trad.newMatch')}
             </button>
@@ -723,6 +755,20 @@ export function TraditionalScreen({ settings }: { settings: Settings }) {
         <div className="replay-overlay" role="dialog" aria-modal="true" aria-label="Revisão da partida">
           <ReplayReview record={serializeReplay(s)} ruleset={s.ruleset} onClose={() => setShowReplay(false)} />
         </div>
+      )}
+      {importedReplay && (
+        <div className="replay-overlay" role="dialog" aria-modal="true" aria-label="Revisão da partida importada">
+          <ReplayReview
+            record={importedReplay.record}
+            ruleset={importedReplay.ruleset}
+            onClose={() => setImportedReplay(null)}
+          />
+        </div>
+      )}
+      {ioMsg && (
+        <p className="muted small" role="status" style={{ marginTop: 6 }}>
+          {ioMsg}
+        </p>
       )}
     </div>
   );

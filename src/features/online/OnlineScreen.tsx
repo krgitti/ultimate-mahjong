@@ -4,21 +4,11 @@ import { TileFaceArt, TileBack } from '../../components/TileFace';
 import { faceName, type TileFace } from '../../game-engine/tiles/tiles';
 import { sfx } from '../../components/sound';
 import { ReplayReview } from '../traditional/ReplayReview';
-import { inviteLink, roomFromSearch, copyText } from './invite';
+import { inviteLink, roomFromSearch, copyText, replayLink, replayCodeFromSearch } from './invite';
 import { t } from '../../i18n';
 import type { ReplayRecord } from '../../game-engine/traditional/engine';
 import type { Ruleset } from '../../game-engine/rules/ruleset';
-import { hkRuleset } from '../../game-engine/rules/ruleset';
-import { HK_DEFAULTS } from '../../game-engine/rules/hongkong';
-import { riichiRuleset } from '../../game-engine/rules/riichi';
-import { mcrRuleset } from '../../game-engine/rules/mcr';
-
-/** reconstrói o ruleset pelo id gravado no replay (mesmo conjunto do servidor) */
-function rulesetForReplay(id: string): Ruleset {
-  if (id === 'riichi') return riichiRuleset({ handsPerMatch: 4, renchan: true });
-  if (id === 'mcr') return mcrRuleset();
-  return hkRuleset(HK_DEFAULTS);
-}
+import { rulesetForReplay } from '../traditional/replayIO';
 
 /** Derive the WS URL for both local dev and the Arena preview proxy. */
 export function onlineWsUrl(defaultPort = 8787): string {
@@ -176,6 +166,9 @@ export function OnlineScreen() {
   const [hist, setHist] = useState<{ playedAt: number; win: boolean; points: number; eloBefore: number; eloAfter: number; roomCode: string; hasReplay?: boolean }[] | null>(null);
   // item 8.3: revisão de partida ranqueada salva (ReplayReview reutilizado)
   const [replayView, setReplayView] = useState<{ record: ReplayRecord; ruleset: Ruleset } | null>(null);
+  // item 9.2: código do replay compartilhável da partida atual + campo p/ assistir por código
+  const [lastReplayCode, setLastReplayCode] = useState<string | null>(null);
+  const [watchCode, setWatchCode] = useState('');
   const [leader, setLeader] = useState<{ username: string; elo: number; rankedPlayed: number; rankedWins: number; rankedPoints: number }[] | null>(null);
   const [view, setView] = useState<PublicState | null>(null);
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -257,6 +250,10 @@ export function OnlineScreen() {
         setHist((msg.rows ?? []) as typeof hist);
         return;
       }
+      if (msg.t === 'replayCode' && msg.code) {
+        setLastReplayCode(String(msg.code));
+        return;
+      }
       if (msg.t === 'replay' && msg.replay) {
         const rec = msg.replay as ReplayRecord;
         setReplayView({ record: rec, ruleset: rulesetForReplay(String(rec.rulesetId ?? 'hk')) });
@@ -289,9 +286,16 @@ export function OnlineScreen() {
   };
 
   // item 8.4: veio de convite com nome já salvo nesta aba → entra sozinho
+  // item 9.2: ?replay=CODE → abre o replay compartilhado direto
   const autoJoined = useRef(false);
   useEffect(() => {
     if (autoJoined.current) return;
+    const replayParam = replayCodeFromSearch(window.location.search);
+    if (replayParam) {
+      autoJoined.current = true;
+      connect({ t: 'replayByCode', code: replayParam });
+      return;
+    }
     const invited = roomFromSearch(window.location.search);
     const savedName = sessionStorage.getItem('umo.online.name');
     if (invited && savedName) {
@@ -550,6 +554,38 @@ export function OnlineScreen() {
           </button>{' '}
           <button className="btn btn-sm" onClick={() => doCopy('link', inviteLink(window.location.href, code))}>
             {copied === 'link' ? t('on.copied') : t('on.copyLink')}
+          </button>
+        </p>
+        {lastReplayCode && (
+          <p className="page-sub">
+            🎬 {t('on.replayCodeTitle')} <b>{lastReplayCode}</b>{' '}
+            <button className="btn btn-sm" onClick={() => doCopy('código', lastReplayCode)}>
+              {copied === 'código' ? t('on.copied') : t('on.copyCode')}
+            </button>{' '}
+            <button
+              className="btn btn-sm"
+              onClick={() => doCopy('link', replayLink(window.location.href, lastReplayCode))}
+            >
+              {copied === 'link' ? t('on.copied') : t('on.copyLink')}
+            </button>{' '}
+            <button className="btn btn-sm" onClick={() => connect({ t: 'replayByCode', code: lastReplayCode })}>
+              {t('on.review')}
+            </button>
+          </p>
+        )}
+        <p className="page-sub" style={{ marginTop: 6 }}>
+          <input
+            value={watchCode}
+            onChange={(e) => setWatchCode(e.target.value.toUpperCase())}
+            placeholder={t('on.replayCodePlaceholder')}
+            maxLength={16}
+            style={{ width: 180 }}
+          />{' '}
+          <button
+            className="btn btn-sm"
+            onClick={() => watchCode.trim() && connect({ t: 'replayByCode', code: watchCode.trim() })}
+          >
+            {t('on.watchReplay')}
           </button>
         </p>
         <div className="panel">

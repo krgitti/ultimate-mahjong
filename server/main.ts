@@ -286,6 +286,17 @@ export function startServer(opts: ServerOptions) {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }
 
+  /** envia uma mensagem arbitrária a todos da sala (jogadores + espectadores) */
+  function broadcastMsg(room: Room, msg: unknown) {
+    const data = JSON.stringify(msg);
+    for (const sess of room.seats) {
+      if (sess?.ws && sess.ws.readyState === WebSocket.OPEN) sess.ws.send(data);
+    }
+    for (const sp of room.spectators) {
+      if (sp.ws.readyState === WebSocket.OPEN) sp.ws.send(data);
+    }
+  }
+
   function broadcast(room: Room) {
     const s = room.state;
     for (let seat = 0; seat < 4; seat++) {
@@ -414,6 +425,15 @@ export function startServer(opts: ServerOptions) {
         }
         // Elo: zero-sum across the LINKED accounts (needs at least two);
         // stats are recorded for every linked account either way.
+        // item 9.2: replay compartilhável por código (todas as salas, ranqueadas ou não)
+        {
+          const code = roomCode() + roomCode().slice(0, 2);
+          const payload = serializeReplay(s);
+          void store
+            .saveReplay(code, payload)
+            .then(() => broadcastMsg(room, { t: 'replayCode', code }))
+            .catch((e) => console.error('saveReplay failed', e));
+        }
         void (async () => {
           const curSeason = seasonKey();
           const replay = serializeReplay(s); // item 8.3: log determinístico da partida
@@ -752,6 +772,21 @@ export function startServer(opts: ServerOptions) {
         return;
       }
 
+      if (t === 'replayByCode') {
+        // item 9.2: assistir replay compartilhado (não exige conta)
+        const code = typeof msg.code === 'string' ? msg.code.trim().toUpperCase() : '';
+        if (!code) {
+          send(ws, { t: 'error', error: 'Código de replay inválido.', code: 'err.replayCodeInvalid' });
+          return;
+        }
+        const payload = await store.getReplay(code);
+        if (!payload) {
+          send(ws, { t: 'error', error: 'Replay não encontrado.', code: 'err.replayNotFound' });
+          return;
+        }
+        send(ws, { t: 'replay', replay: payload, code });
+        return;
+      }
       if (t === 'replay') {
         // item 8.3: revisão de partida salva (histórico → ReplayReview)
         const at = typeof msg.accountToken === 'string' ? msg.accountToken : null;

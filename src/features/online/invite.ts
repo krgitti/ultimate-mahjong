@@ -44,3 +44,17 @@ export async function copyText(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** link para assistir um replay compartilhado (item 9.2) */
+export function replayLink(base: string, code: string): string {
+  const u = new URL(base);
+  u.searchParams.set('replay', code);
+  u.searchParams.delete('sala');
+  u.hash = '#online';
+  return u.toString();
+}
+
+/** lê `?replay=CODE` de uma query string ('' quando ausente) */
+export function replayCodeFromSearch(search: string): string {
+  return new URLSearchParams(search).get('replay') ?? '';
+}

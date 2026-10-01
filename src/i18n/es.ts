@@ -288,4 +288,16 @@ export const es: Record<string, string> = {
   'err.matchInProgress': 'Partida en curso.',
   'err.roomFull': 'Sala llena.',
   'err.connectionClosed': 'Conexión cerrada — recarga para reconectar.',
+  // replays compartibles (item 9.2)
+  'on.replayCodeTitle': 'Replay de esta partida — código',
+  'on.replayCodePlaceholder': 'Código del replay (p. ej. A7K2X9)',
+  'on.watchReplay': '▶ Ver replay',
+  'trad.exportReplay': 'Exportar',
+  'trad.importReplay': 'Importar',
+  'trad.importPrompt': 'Pega el JSON del replay exportado:',
+  'trad.exported': 'Replay copiado al portapapeles.',
+  'trad.exportFailed': 'No se pudo copiar — el navegador bloqueó el portapapeles.',
+  'trad.importFailed': 'JSON de replay inválido.',
+  'err.replayCodeInvalid': 'Código de replay inválido.',
+  'err.replayNotFound': 'Replay no encontrado.',
 };

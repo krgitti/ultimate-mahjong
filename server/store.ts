@@ -110,6 +110,9 @@ export interface RoomStore {
   history(accountId: number, limit?: number): Promise<HistoryRow[]>;
   /** busca o replay de uma partida do histórico (item 8.3) */
   historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null>;
+  /** replays compartilháveis por código (item 9.2) */
+  saveReplay(code: string, payload: ReplayPayload): Promise<void>;
+  getReplay(code: string): Promise<ReplayPayload | null>;
   leaderboard(limit?: number): Promise<LeaderRow[]>;
   close(): Promise<void>;
 }
@@ -212,6 +215,13 @@ export class MemoryStore implements RoomStore {
   }
   async historyReplay(accountId: number, playedAt: number): Promise<HistoryRow | null> {
     return (this.historyRows.get(accountId) ?? []).find((r) => r.playedAt === playedAt) ?? null;
+  }
+  private replays = new Map<string, ReplayPayload>();
+  async saveReplay(code: string, payload: ReplayPayload): Promise<void> {
+    this.replays.set(code, payload);
+  }
+  async getReplay(code: string): Promise<ReplayPayload | null> {
+    return this.replays.get(code) ?? null;
   }
   async leaderboard(limit = 20): Promise<LeaderRow[]> {
     return [...this.accounts.values()]
@@ -394,6 +404,21 @@ export class PostgresStore implements RoomStore {
       season: (r.season as string | null) ?? undefined,
       replay,
     };
+  }
+
+  async saveReplay(code: string, payload: ReplayPayload): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO replays (code, payload, created_at) VALUES ($1, $2, $3)
+       ON CONFLICT (code) DO NOTHING`,
+      [code, JSON.stringify(payload), Date.now()]
+    );
+  }
+
+  async getReplay(code: string): Promise<ReplayPayload | null> {
+    const res = await this.pool.query(`SELECT payload FROM replays WHERE code = $1`, [code]);
+    const r = res.rows[0];
+    if (!r) return null;
+    return typeof r.payload === 'string' ? (JSON.parse(r.payload) as ReplayPayload) : (r.payload as ReplayPayload);
   }
 
   async leaderboard(limit = 20): Promise<LeaderRow[]> {

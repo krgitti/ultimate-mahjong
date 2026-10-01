@@ -288,4 +288,16 @@ export const en: Record<string, string> = {
   'err.matchInProgress': 'Match in progress.',
   'err.roomFull': 'Room full.',
   'err.connectionClosed': 'Connection closed — reload to reconnect.',
+  // shareable replays (item 9.2)
+  'on.replayCodeTitle': 'Replay of this match — code',
+  'on.replayCodePlaceholder': 'Replay code (e.g. A7K2X9)',
+  'on.watchReplay': '▶ Watch replay',
+  'trad.exportReplay': 'Export',
+  'trad.importReplay': 'Import',
+  'trad.importPrompt': 'Paste the exported replay JSON:',
+  'trad.exported': 'Replay copied to the clipboard.',
+  'trad.exportFailed': 'Could not copy — the browser blocked the clipboard.',
+  'trad.importFailed': 'Invalid replay JSON.',
+  'err.replayCodeInvalid': 'Invalid replay code.',
+  'err.replayNotFound': 'Replay not found.',
 };

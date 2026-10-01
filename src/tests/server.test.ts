@@ -593,6 +593,14 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(rep.replay!.rulesetId).toBeTruthy();
       expect(Number(rep.replay!.seed)).toBeGreaterThan(0);
       expect(rep.replay!.actions.length).toBeGreaterThan(0);
+      // item 9.2: no fim da partida todos recebem o código do replay compartilhável
+      const rc = await A.next((m) => m.t === 'replayCode' && !!m.code, 15000, 'replayCode');
+      const shared = await (async () => {
+        A.ws.send(JSON.stringify({ t: 'replayByCode', code: rc.code }));
+        return A.next((m) => m.t === 'replay' && m.code === rc.code, 15000, 'replayByCode');
+      })();
+      expect(Number(shared.replay!.seed)).toBe(Number(rep.replay!.seed));
+      expect(shared.replay!.actions.length).toBe(rep.replay!.actions.length);
       L.ws.close();
     } finally {
       await server.close();
@@ -650,6 +658,12 @@ describe('item 6a — Elo + leaderboard', () => {
       expect(full?.replay?.actions.length).toBe(1);
       expect(await c.historyReplay(a1.id, 2000)).toBeTruthy(); // existe, mas sem replay
       expect((await c.historyReplay(a1.id, 2000))?.replay).toBeUndefined();
+      // replays compartilháveis (item 9.2)
+      await c.saveReplay('PG7777', { rulesetId: 'mcr', seed: 123, actions: [{ t: 'discard', seat: 2 }] });
+      const rp = await c.getReplay('PG7777');
+      expect(rp?.rulesetId).toBe('mcr');
+      expect(rp?.seed).toBe(123);
+      expect(await c.getReplay('XXXX00')).toBeNull();
       await c.close();
     } catch {
       ok = false;
@@ -997,6 +1011,17 @@ describe('item 8b — watchdog de conexão (ranked)', () => {
       await server.close();
     }
   }, 60000);
+});
+
+describe('item 9b — replays compartilháveis (store)', () => {
+  it('MemoryStore: saveReplay/getReplay', async () => {
+    const st = new MemoryStore();
+    await st.init();
+    await st.saveReplay('ABCD12', { rulesetId: 'hk', seed: 9, actions: [{ t: 'discard' }] });
+    const got = await st.getReplay('ABCD12');
+    expect(got?.seed).toBe(9);
+    expect(await st.getReplay('NOPE00')).toBeNull();
+  });
 });
 
 describe('item 8c — replay no histórico (MemoryStore)', () => {
